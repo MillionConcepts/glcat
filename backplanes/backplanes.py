@@ -2,13 +2,14 @@ from functools import partial
 from itertools import product
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Optional
+from typing import Literal
 
 import astropy.io.fits
 import fast_histogram as fh
 import numpy as np
 import pandas as pd
 import sh
+from gPhoton.types import GalexBand
 from more_itertools import windowed
 from pyarrow import parquet
 from scipy.stats import binned_statistic_2d
@@ -16,18 +17,39 @@ from scipy.stats import binned_statistic_2d
 from gPhoton.moviemaker._steps import (
     select_on_detector,
     generate_wcs_components,
-    slice_into_memory
+    slice_into_memory, populate_fits_header
 )
 from gPhoton.pretty import print_inline
-from gPhoton.reference import eclipse_to_paths
+from gPhoton.reference import PipeContext
 from gPhoton.sharing import (
     reference_shared_memory_arrays
 )
-from gPhoton.types import GalexBand
 from gPhoton.vorpal import between
 
 
-def components_to_shared_memory(components, depth):
+def stub_header(band, wcs=None, tranges=None):
+    """
+    create an astropy.io.fits.Header object containing our canonical
+    metadata values
+    """
+    header = astropy.io.fits.Header()
+    if wcs is not None:
+        header["CDELT1"], header["CDELT2"] = wcs.wcs.cdelt
+        header["CTYPE1"], header["CTYPE2"] = wcs.wcs.ctype
+        header["CRPIX1"], header["CRPIX2"] = wcs.wcs.crpix
+        header["CRVAL1"], header["CRVAL2"] = wcs.wcs.crval
+        header["EQUINOX"], header["EPOCH"] = 2000.0, 2000.0
+    header["BAND"] = 1 if band == "NUV" else 2
+    if tranges is not None:
+        for i, trange in enumerate(tranges):
+            header["EXPSTART"] = np.array(tranges).min()
+            header["EXPEND"] = np.array(tranges).max()
+            header["N_FRAME"] = len(tranges)
+            header["T0_{i}".format(i=i)] = trange[0]
+            header["T1_{i}".format(i=i)] = trange[1]
+    return header
+
+def send_to_shared_memory(components, depth):
     total_trange = (components['t'].min(), components['t'].max())
     t0s = np.arange(total_trange[0], total_trange[1] + depth, depth)
     tranges = list(windowed(t0s, 2))
@@ -94,31 +116,21 @@ def sm_compute_dosemap_frame(block_info, imsz, frame_ix):
     }
 
 
-def make_dosemap(
-    eclipse: int,
-    band: GalexBand = 'NUV',
-    leg: int = 0,
-    depth: Optional[int] = None,
-    burst: bool = False,
-    root: str = 'data',
-    threads: Optional[int] = None,
-    radius: int = 400
-):
-    paths = eclipse_to_paths(eclipse, band, leg=leg, root=root)
-    components = load_for_dosemap(paths['photonfile'], radius)
-    if depth is None:
+def make_dosemap(ctx: PipeContext, radius: int = 400):
+    components = load_for_dosemap(ctx()['photonfile'], radius)
+    if ctx.depth is None:
         maps = dosemap_frame(components, radius)
-        return write_backplane_image(maps, eclipse, band, leg, root)
-    else:
-        print('slicing position data into shared memory')
-        dose_blocks, tranges = components_to_shared_memory(components, depth)
-        del components
+        return write_backplane_image(maps, ctx)
+    print('slicing position data into shared memory')
+    dose_blocks, tranges = send_to_shared_memory(components, ctx.depth)
+    del components
     frames = {}
-    pool = Pool(threads) if threads is not None else None
+    pool = Pool(ctx.threads) if ctx.threads is not None else None
     for frame_ix, trange in enumerate(tranges):
         if pool is not None:
             frames[frame_ix] = pool.apply_async(
-                sm_make_dosemap, (dose_blocks[frame_ix], radius, frame_ix)
+                sm_compute_dosemap_frame,
+                (dose_blocks[frame_ix], radius, frame_ix)
             )
         else:
             frames[frame_ix] = sm_compute_dosemap_frame(
@@ -130,9 +142,7 @@ def make_dosemap(
         frames = {ix: frame.get() for ix, frame in frames.items()}
     ranges = dosemap_ranges(radius)
     imsz = [ranges[0][1] - ranges[0][0]] * 2
-    return write_backplane_movies(
-        frames, imsz, eclipse, band, leg, depth, burst, root
-    )
+    return write_backplane_movies(frames, imsz, ctx, tranges)
 
 
 def load_for_xymap(photonfile, radius=400):
@@ -177,7 +187,7 @@ def sm_binner(arrays, ax, stat, imsz):
         arrays['foc'][:, 0] - 0.5,
         arrays[ax],
         bins=imsz,
-        range=([[0, imsz[0]], [0, imsz[1]]]).append,
+        range=([[0, imsz[0]], [0, imsz[1]]]),
         statistic=stat
     )[0].astype(np.float32)
 
@@ -205,30 +215,28 @@ def sm_compute_xymap_frame(block_info, imsz, frame_ix):
 
 
 def write_backplane_file(
-    image, root, eclipse, band, leg, depth, name, frame_ix='movie'
+    image, ctx, name, frame="movie", tranges=None, wcs=None
 ):
-    basename = (
-        f'e{eclipse}_{band[0].lower()}d_{leg}b_{depth}s_{frame_ix}_{name}.fits'
-    )
+    fn = ctx()['image'] if frame == 'image' else ctx(frame=frame)['movie']
+    fn = fn.replace('.fits.gz', f'_{name}.fits')
     for ext in ('', '.gz'):
-        if Path(root, basename + ext).exists():
-            Path(basename).unlink()
-    hdu = astropy.io.fits.PrimaryHDU(image)
-    hdu.writeto(basename)
-    sh.igzip(basename)
-    Path(basename).unlink()
+        if Path(ctx.eclipse_path(), fn + ext).exists():
+            Path(fn + ext).unlink()
+    header = stub_header(ctx.band, wcs, tranges)
+    hdu = astropy.io.fits.PrimaryHDU(image, header=header)
+    hdu.writeto(fn)
+    print(f'gzipping {name} {frame}')
+    sh.igzip(fn)
+    Path(fn).unlink()
 
 
-def write_backplane_image(maps, eclipse, band, leg, root):
+def write_backplane_image(maps, ctx, tranges=None, wcs=None):
     for name, image in maps.items():
-        write_backplane_file(image, root, eclipse, band, leg, name, 'image')
+        write_backplane_file(image, ctx, name, 'image', tranges, wcs)
 
 
-def write_backplane_movies(
-    frames, imsz, eclipse, band, leg, depth, burst, root
-):
-    title = (root, eclipse, band, leg, depth)
-    if burst is False:
+def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None):
+    if ctx.burst is False:
         maps = {k: [] for k in frames[0].keys()}
         for ix in list(frames.keys()):
             for name, array in frames[ix].items():
@@ -238,8 +246,11 @@ def write_backplane_movies(
             print(f'writing {name}')
             write_backplane_file(
                 np.dstack([f.to_dense().reshape(imsz) for f in maps[name]]),
-                *title,
-                name
+                ctx,
+                name,
+                "movie",
+                tranges,
+                wcs
             )
             del maps[name]
         return
@@ -248,34 +259,26 @@ def write_backplane_movies(
             print(f'writing {name} (frame {ix})')
             write_backplane_file(
                 sparse.to_dense().reshape(imsz),
-                *title,
+                ctx,
                 name,
-                str(ix).zfill(5)
+                str(ix).zfill(5),
+                tranges,
+                wcs
             )
         del frames[ix]
 
 
-def make_xymaps(
-    eclipse: int,
-    band: GalexBand = 'NUV',
-    leg: int = 0,
-    depth: Optional[int] = None,
-    burst: bool = False,
-    root: str = 'data',
-    threads: Optional[int] = None
-):
-    paths = eclipse_to_paths(eclipse, band, leg=leg, root=root)
+def make_xymaps(ctx: PipeContext):
     print("loading photonlist and computing wcs")
-    components, wcs, imsz = load_for_xymap(paths['photonfile'])
-    if depth is None:
+    components, wcs, imsz = load_for_xymap(ctx()['photonfile'])
+    if ctx.depth is None:
         maps = make_full_depth_xymaps(components, imsz)
-        return write_backplane_image(maps, eclipse, band, leg, root)
-    else:
-        print('slicing position data into shared memory')
-        ax_blocks, tranges = components_to_shared_memory(components, depth)
-        del components
+        return write_backplane_image(maps, ctx, None, wcs)
+    print('slicing position data into shared memory')
+    ax_blocks, tranges = send_to_shared_memory(components, ctx.depth)
+    del components
     frames = {}
-    pool = Pool(threads) if threads is not None else None
+    pool = Pool(ctx.threads) if ctx.threads is not None else None
     for frame_ix, trange in enumerate(tranges):
         if pool is not None:
             frames[frame_ix] = pool.apply_async(
@@ -289,6 +292,32 @@ def make_xymaps(
         pool.close()
         pool.join()
         frames = {ix: frame.get() for ix, frame in frames.items()}
-    return write_backplane_movies(
-        frames, imsz, eclipse, band, leg, depth, burst, root
+    return write_backplane_movies(frames, imsz, ctx, tranges, wcs)
+
+
+def make_backplanes(
+    eclipse,
+    band: GalexBand = "NUV",
+    depth=None,
+    leg=0,
+    threads=None,
+    burst=False,
+    local='test_data',
+    kind: Literal["xy", "dose"] = "xy",
+    radius: int = 400
+):
+    ctx = PipeContext(
+        eclipse,
+        band,
+        depth,
+        "gzip",
+        local,
+        leg=leg,
+        threads=threads,
+        burst=burst
     )
+    if kind == "xy":
+        return make_xymaps(ctx)
+    elif kind == "dose":
+        return make_dosemap(ctx, radius)
+    raise ValueError("unrecognized backplane type")
