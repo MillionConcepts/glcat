@@ -378,6 +378,8 @@ def write_or_return_arrays(maps, frame_ix, ctx, wcs=None, tranges=None):
         for k, v in maps.items():
             write_backplane_file(v, ctx, tranges, wcs, k, frame_ix)
         return
+    elif ctx.write.get('array') is False:
+        return
     return {
         name: pd.arrays.SparseArray(array.ravel())
         for name, array in maps.items()
