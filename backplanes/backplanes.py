@@ -2,7 +2,8 @@ from functools import partial
 from itertools import product
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Literal
+from types import MappingProxyType
+from typing import Literal, Optional, Mapping
 
 import astropy.io.fits
 import fast_histogram as fh
@@ -26,6 +27,8 @@ from gPhoton.sharing import (
 )
 from gPhoton.vorpal import between
 
+from astrometry.aspect_correction.main import get_stars, make_file_names
+
 
 def stub_header(band, wcs=None, tranges=None):
     """
@@ -48,6 +51,7 @@ def stub_header(band, wcs=None, tranges=None):
             header["T0_{i}".format(i=i)] = trange[0]
             header["T1_{i}".format(i=i)] = trange[1]
     return header
+
 
 def send_to_shared_memory(components, depth):
     total_trange = (components['t'].min(), components['t'].max())
@@ -94,7 +98,7 @@ def dosemap_frame(axes, radius=400, resolution=None):
     resolution = radius * 8 if resolution is None else radius
     return fh.histogram2d(
         axes['x'], axes['y'], bins=resolution, range=dosemap_ranges(radius)
-    )
+    ).astype('float32')
 
 
 def sm_make_dosemap(block_info, radius, frame_ix):
@@ -103,24 +107,39 @@ def sm_make_dosemap(block_info, radius, frame_ix):
     return {'dose': dosemap_frame(axes, radius)}
 
 
-def sm_compute_dosemap_frame(block_info, imsz, frame_ix):
+def sm_compute_dosemap_frame(block_info, imsz, frame_ix, ctx):
     maps = sm_make_dosemap(block_info, imsz, frame_ix)
     for _, block in reference_shared_memory_arrays(
         block_info, fetch=False
     )[0].items():
         block.close()
         block.unlink()
-    return {
-        name: pd.arrays.SparseArray(array.ravel())
-        for name, array in maps.items()
+    if ctx.write.get('xylist') is True:
+        write_xylist_inline(ctx, frame_ix, maps)
+    return write_or_return_arrays(maps, frame_ix, ctx)
+
+
+def write_xylist_inline(ctx, frame_ix, maps):
+    # TODO: let's unravel this later.
+    file_names = {
+        'xylist': {
+            frame_ix: str(Path(ctx.eclipse_path(), f'frame{frame_ix}.xyls'))
+        }
     }
+    table_name = get_stars(
+        maps['dose'], frame_ix, file_names, ctx.threshold, ctx.star_size
+    )
+    print(f"wrote xylist for frame {frame_ix} to {table_name}")
 
 
 def make_dosemap(ctx: PipeContext, radius: int = 400):
     components = load_for_dosemap(ctx()['photonfile'], radius)
     if ctx.depth is None:
         maps = dosemap_frame(components, radius)
-        return write_backplane_image(maps, ctx)
+        if ctx.write['array'] is True:
+            if ctx.write['xylist'] is True:
+                print('note: xylists not implemented for full-depth dosemaps.')
+            return write_backplane_image(maps, ctx)
     print('slicing position data into shared memory')
     dose_blocks, tranges = send_to_shared_memory(components, ctx.depth)
     del components
@@ -130,11 +149,11 @@ def make_dosemap(ctx: PipeContext, radius: int = 400):
         if pool is not None:
             frames[frame_ix] = pool.apply_async(
                 sm_compute_dosemap_frame,
-                (dose_blocks[frame_ix], radius, frame_ix)
+                (dose_blocks[frame_ix], radius, frame_ix, ctx)
             )
         else:
             frames[frame_ix] = sm_compute_dosemap_frame(
-                dose_blocks[frame_ix], radius, frame_ix
+                dose_blocks[frame_ix], radius, frame_ix, ctx
             )
     if pool is not None:
         pool.close()
@@ -201,21 +220,18 @@ def sm_make_xymaps(block_info, imsz, frame_ix):
     return xymaps
 
 
-def sm_compute_xymap_frame(block_info, imsz, frame_ix):
+def sm_compute_xymap_frame(block_info, imsz, frame_ix, ctx, wcs, tranges):
     maps = sm_make_xymaps(block_info, imsz, frame_ix)
     for _, block in reference_shared_memory_arrays(
         block_info, fetch=False
     )[0].items():
         block.close()
         block.unlink()
-    return {
-        name: pd.arrays.SparseArray(array.ravel())
-        for name, array in maps.items()
-    }
+    return write_or_return_arrays(maps, frame_ix, ctx, wcs, tranges)
 
 
 def write_backplane_file(
-    image, ctx, name, frame="movie", tranges=None, wcs=None
+    image, ctx, tranges=None, wcs=None, name="", frame="movie"
 ):
     fn = ctx()['image'] if frame == 'image' else ctx(frame=frame)['movie']
     fn = fn.replace('.fits.gz', f'_{name}.fits')
@@ -232,10 +248,21 @@ def write_backplane_file(
 
 def write_backplane_image(maps, ctx, tranges=None, wcs=None):
     for name, image in maps.items():
-        write_backplane_file(image, ctx, name, 'image', tranges, wcs)
+        write_backplane_file(image, ctx, tranges, wcs, name, 'image')
+
+
+def sparse_to_movie(sparse, imsz):
+    return np.dstack([f.to_dense().reshape(imsz) for f in sparse])
 
 
 def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None):
+    if check_inline_write(ctx) is True:
+        print("all outputs written inline; terminating.")
+        return
+    if ctx.write.get('array') is False:
+        print('write["array"] = False; terminating.')
+        return
+    args = (ctx, tranges, wcs)
     if ctx.burst is False:
         maps = {k: [] for k in frames[0].keys()}
         for ix in list(frames.keys()):
@@ -245,12 +272,7 @@ def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None):
         for name in list(maps.keys()):
             print(f'writing {name}')
             write_backplane_file(
-                np.dstack([f.to_dense().reshape(imsz) for f in maps[name]]),
-                ctx,
-                name,
-                "movie",
-                tranges,
-                wcs
+                sparse_to_movie(maps[name], imsz), *args, name, "movie"
             )
             del maps[name]
         return
@@ -258,12 +280,7 @@ def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None):
         for name, sparse in frames[ix].items():
             print(f'writing {name} (frame {ix})')
             write_backplane_file(
-                sparse.to_dense().reshape(imsz),
-                ctx,
-                name,
-                str(ix).zfill(5),
-                tranges,
-                wcs
+                sparse.to_dense().reshape(imsz), *args, name, str(ix).zfill(5)
             )
         del frames[ix]
 
@@ -282,11 +299,12 @@ def make_xymaps(ctx: PipeContext):
     for frame_ix, trange in enumerate(tranges):
         if pool is not None:
             frames[frame_ix] = pool.apply_async(
-                sm_compute_xymap_frame, (ax_blocks[frame_ix], imsz, frame_ix)
+                sm_compute_xymap_frame,
+                (ax_blocks[frame_ix], imsz, frame_ix, ctx, wcs, tranges)
             )
         else:
             frames[frame_ix] = sm_compute_xymap_frame(
-                ax_blocks[frame_ix], imsz, frame_ix
+                ax_blocks[frame_ix], imsz, frame_ix, ctx, wcs, tranges
             )
     if pool is not None:
         pool.close()
@@ -304,8 +322,15 @@ def make_backplanes(
     burst=False,
     local='test_data',
     kind: Literal["xy", "dose"] = "xy",
-    radius: int = 400
+    radius: int = 400,
+    write: Optional[Mapping] = None,
+    stop_after: Optional[str] = None,
+    inline: bool = True,
+    threshold: float = 0.75,
+    star_size: float = 2
 ):
+    # noinspection PyTypeChecker
+    write = {} if write is None else dict(write)
     ctx = PipeContext(
         eclipse,
         band,
@@ -314,10 +339,46 @@ def make_backplanes(
         local,
         leg=leg,
         threads=threads,
-        burst=burst
+        burst=burst,
+        write=write,
+        stop_after=stop_after
     )
+    # TODO: consider propagating this little hack upstream
+    ctx.hdu_constructor_kwargs = dict(ctx.hdu_constructor_kwargs)
+    ctx.inline = inline
+    ctx.star_size = star_size
+    ctx.threshold = threshold
+    warn_bad_inline(ctx)
     if kind == "xy":
         return make_xymaps(ctx)
     elif kind == "dose":
         return make_dosemap(ctx, radius)
     raise ValueError("unrecognized backplane type")
+
+
+def warn_bad_inline(ctx):
+    combo = (
+        ctx.write.get('array') is True, ctx.inline is True, ctx.burst is False
+    )
+    if all(combo):
+        print("warning: inline array-writing only possible in burst mode.")
+
+
+def check_inline_write(ctx):
+    combo = (
+        ctx.write.get('array') is True, ctx.inline is True, ctx.burst is True
+    )
+    if all(combo):
+        return True
+    return False
+
+
+def write_or_return_arrays(maps, frame_ix, ctx, wcs=None, tranges=None):
+    if check_inline_write(ctx):
+        for k, v in maps.items():
+            write_backplane_file(v, ctx, tranges, wcs, k, frame_ix)
+        return
+    return {
+        name: pd.arrays.SparseArray(array.ravel())
+        for name, array in maps.items()
+    }
