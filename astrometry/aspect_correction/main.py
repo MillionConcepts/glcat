@@ -377,18 +377,19 @@ def make_file_names(eclipse, expt, num_frames, run_type, threshold, star_size):
             # paths to movie frame images, largely used for an image or verification run
             frame_padded = str(i).zfill(5)
             time_padded = str(expt).zfill(4)
+            eclipse = str(eclipse).zfill(5)
             frame_path.append(str(image_path + f"e{eclipse}-nd-t{time_padded}-b00-f{frame_padded}-g_dose.fits")) # 0-
             # for each frame, resulting new wcs
             output_wcs.append(f"/home/bekah/glcat/astrometry/aspect_correction/frame{i}.wcs")
             # verified wcs list
             ver_wcs.append(f"/home/bekah/glcat/astrometry/aspect_correction/e21442/e21442-nd-1s-f{frame_padded}-rice.wcs") #TODO: don't hardcode this
         # may not be used, for output of a verification run
-        verified_df = f"{eclipse}_aspect_soln_{expt}s_thresh{threshold}_size{star_size}_verified"
+        verified_df = f"e{eclipse}_aspect_soln_{expt}s_thresh{threshold}_size{star_size}_verified"
         # main refined aspect solution
         if threshold and star_size is None:
-            asp_df = f"{eclipse}_aspect_soln_{expt}s"
+            asp_df = f"e{eclipse}_aspect_soln_{expt}s"
         else:
-            asp_df = f"{eclipse}_aspect_soln_{expt}s_thresh{threshold}_size{star_size}_dose"
+            asp_df = f"e{eclipse}_aspect_soln_{expt}s_thresh{threshold}_size{star_size}_dose"
 
     file_names = {"asp_df": asp_df, "verified_df": verified_df, "xylist": fits_table,
                   "frame_path": frame_path, "output_wcs": output_wcs, "ver_wcs": ver_wcs}
@@ -421,7 +422,7 @@ def get_ra_dec(eclipse):
     """ Loading aspect table, set the ra and dec to 0 in the pipeline to get the movie,
      so we have to work around that here to get an initial ra / dec guess for
       astrometry.net. """
-    #eclipse = 9869
+    eclipse = 9869
     parq = parquet.read_table('/home/bekah/gphoton_working/gPhoton/aspect/aspect.parquet')
     aspect = parq.to_pandas()
     ra = np.mean(aspect[aspect["eclipse"] == eclipse]["ra"])
@@ -437,4 +438,3 @@ def get_aspect_from_wcs(wcs_path):
     new_center_ra = frame_wcs[0].header["CRVAL1"]
     new_center_dec = frame_wcs[0].header["CRVAL2"]
     return new_center_ra, new_center_dec
-
