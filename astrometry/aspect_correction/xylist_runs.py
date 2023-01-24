@@ -5,16 +5,14 @@ import pandas as pd
 from astropy.io import fits
 import subprocess
 import os.path
-from util import zero_flag_and_edge, get_aspect_from_wcs, get_ra_dec, clean_up
+from util import zero_flag_and_edge, get_aspect_from_wcs, get_ra_dec, clean_up, make_refined_aspect_table
 from image_runs import run_image_frame
 
 
-def run_xylist(eclipse, expt, num_frames, file_names, dose, **opt):
+def run_xylist(eclipse, expt, num_frames, file_names, dose):
     """Handler for running astrometry.net with xylists, our main way to run it.
     This means it only intakes picture info, as well as a list of star x, y
     positions."""
-    aspect_solution = {}
-    failed_frames = []
     if not dose:
         print("Only run 'xylist' on dosemap data because they have pre-made xylists.")
         return
@@ -24,29 +22,18 @@ def run_xylist(eclipse, expt, num_frames, file_names, dose, **opt):
         ra, dec = get_ra_dec(eclipse)
         if table_name is None:
             print(f"No xylist written for this frame {i}.")
-            aspect_solution[i] = [ra, dec]
         else:
-            #TODO: pull from wcs file instead of hard-coding
+            #TODO: pull from wcs file instead of hard-coding?
             image_width = 3200
             image_height = 3200
             crpix_x = 1600
             crpix_y = 1600
             # call to astrometry.net
-            run_astrometry_net(eclipse, expt, file_names, image_width, image_height, ra,
+            run_astrometry_net(eclipse, i, expt, file_names, image_width, image_height, ra,
                                dec, crpix_x, crpix_y)
-            # get resultant ra and dec
-            if os.path.exists(file_names["output_wcs"][i]):
-                new_center_ra, new_center_dec = get_aspect_from_wcs(file_names["output_wcs"][i])
-                aspect_solution[i] = [new_center_ra, new_center_dec]
-            if not os.path.exists(file_names["output_wcs"][i]):
-                # if astrometry.net failed and didn't write a wcs file, use previous frame's result
-                aspect_solution[i] = [ra, dec]
-                print("This frame failed via xylist.")
-                failed_frames.append(i)
-            clean_up(file_names, i)
-    asp_df = pd.DataFrame(aspect_solution)
-    print("The list of failed frames is:")
-    print(failed_frames)
+
+    asp_df = make_refined_aspect_table(file_names)
+
     return asp_df
 
 
@@ -94,7 +81,7 @@ def run_xylist_on_image(eclipse, expt, num_frames, file_names, dose, **opt):
             if table_name is None:
                 print(f"No stars found in this frame {i}.")
                 aspect_solution[i] = [ra, dec]
-            else:
+            if table_name is not None:
                 image_width = 3200
                 image_height = 3200
                 crpix_x = 1600  # RA -- TAN
@@ -105,28 +92,12 @@ def run_xylist_on_image(eclipse, expt, num_frames, file_names, dose, **opt):
                 run_astrometry_net(eclipse, expt, table_name, image_width, image_height, ra,
                                    dec, crpix_x, crpix_y)
 
-        wcs_path = f"/home/bekah/glcat/astrometry/aspect_correction/frame{i}.wcs"
-        if os.path.exists(wcs_path):
-            new_center_ra, new_center_dec = get_aspect_from_wcs(wcs_path)
-            aspect_solution[i] = [new_center_ra, new_center_dec]
-        if not os.path.exists(wcs_path):
-            # try an alternative solution without DAO-produced XY lists
-            run_image_frame(eclipse, expt, i, file_names)
-            if os.path.exists(wcs_path):
-                new_center_ra, new_center_dec = get_aspect_from_wcs(wcs_path)
-                aspect_solution[i] = [new_center_ra, new_center_dec]
-            # but use the previous ra and dec if that fails too
-            if not os.path.exists(wcs_path):
-                aspect_solution[i] = [ra, dec]
-                print("This frame failed both via xylist and image.")
-                failed_frames.append(i)
-    print("The list of failed frames is:")
-    print(failed_frames)
-    asp_df = pd.DataFrame(aspect_solution)
+        asp_df = make_refined_aspect_table(eclipse, expt, file_names)
+
     return asp_df
 
 
-def run_astrometry_net(eclipse, expt, file_names, image_width, image_height, ra,
+def run_astrometry_net(eclipse, i, expt, file_names, image_width, image_height, ra,
                        dec, crpix_x, crpix_y):
     """ Main call to astrometry.net:
     solve-field: command to solve for aspect solution
@@ -144,10 +115,11 @@ def run_astrometry_net(eclipse, expt, file_names, image_width, image_height, ra,
 
     print(f"Running astrometry.net on {expt} s frame of {eclipse}.")
     print(f"Frame is near {ra}, {dec}.")
-    cmd = f"solve-field --overwrite --no-plots --dir{file_names['astrometry_temp']} -w {image_width} -e {image_height} " \
+    print(f"xylist path is: {file_names['xylist'][i]}")
+    cmd = f"solve-field --overwrite --no-plots --dir {file_names['astrometry_temp']} -w {image_width} -e {image_height} " \
           f"--scale-units arcsecperpix --scale-low 1.4 --scale-high 1.6 " \
-          f" -3 {ra} -4 {dec} --crpix-x {crpix_x} --crpix-y {crpix_y} --radius 3" \
-          f"'{file_names['xylist']}'"
+          f"-N none -U none --axy none -B none -M none -R none " \
+          f" -3 {ra} -4 {dec} --crpix-x {crpix_x} --crpix-y {crpix_y} --radius 3 {file_names['xylist'][i]}"
     # --no-tweak
     # f" --verify '/home/bekah/glcat/astrometry/e{eclipse}/e{eclipse}-nd-{expt}s-0-f0000-rice.fits' --verify-ext 1 " \
     # -L 1.2 -H 1.8 -u app

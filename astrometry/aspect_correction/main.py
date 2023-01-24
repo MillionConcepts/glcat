@@ -30,7 +30,7 @@ def execute_refiner(
                     dose: Optional[bool] = False,
                     threshold: Optional[float] = None,
                     star_size: Optional[int] = None,
-                    output_directory: Optional[str] = "/home/bekah/glcat_tests"
+                    output_directory: Optional[str] = "/home/bekah/glcat_tests/"
                     ):
     """
     Args:
@@ -73,7 +73,7 @@ def execute_refiner(
     if run_type == "xylist":
         # fastest way to get aspect
         print("Running astrometry.net on xylists.")
-        asp_df = run_xylist(eclipse, expt, num_frames, file_names, dose, **opt)
+        asp_df = run_xylist(eclipse, expt, num_frames, file_names, dose)
         print("Writing aspect solutions to csv.")
         asp_df.to_csv(file_names["asp_df"])
         return

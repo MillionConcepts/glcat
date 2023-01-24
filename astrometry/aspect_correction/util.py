@@ -1,9 +1,47 @@
 # helper functions for aspect refinement
 
 from pyarrow import parquet
-import numpy as np
 from astropy.io import fits
+import numpy as np
+import os
+import pandas as pd
 import subprocess
+import io
+
+
+def make_refined_aspect_table(file_names):
+    """makes pandas df with wcs info for all frames, including failed ones."""
+    # making an empty dataframe with column names, could pull col names from first
+    # returned df but would get messy if first few frames failed
+    asp_df = pd.DataFrame(columns=['frame', 'crpix0', 'crpix1', 'crval0', 'ra_tangent',
+                                   'dec_tangent', 'pixx_tangent', 'pixy_tangent',
+                                   'imagew', 'imageh', 'cd11', 'cd12', 'cd21', 'cd22',
+                                   'det', 'parity', 'pixscale', 'orientation',
+                                   'ra_center', 'dec_center', 'orientation_center',
+                                   'ra_center_h', 'ra_center_m', 'ra_center_s',
+                                   'dec_center_sign', 'dec_center_d', 'dec_center_m',
+                                   'dec_center_s', 'ra_center_hms', 'dec_center_dms',
+                                   'ra_center_merc', 'dec_center_merc', 'fieldarea',
+                                   'fieldw', 'fieldh', 'fieldunits', 'decmin', 'decmax',
+                                   'ramin', 'ramax', 'ra_min_merc', 'ra_max_merc',
+                                   'dec_min_merc', 'dec_max_merc', 'merc_diff',
+                                   'merczoom', 'failed_flag'])
+    for frame, wcs_path in file_names["output_wcs"]:
+        if os.path.exists(wcs_path):
+            frame_wcs = get_aspect_from_wcsinfo(wcs_path)
+            frame_wcs["frame"] = frame
+            asp_df = pd.concat([asp_df, frame_wcs])
+        if not os.path.exists(wcs_path):
+            print("This frame failed via xylist, marking as failed in aspect df.")
+            frame_no_wcs = pd.DataFrame(columns=['frame', 'failed_flag'])
+            frame_no_wcs["frame"] = frame
+            frame_no_wcs["failed_flag"] = True
+            asp_df = pd.concat([asp_df, frame_no_wcs])
+
+    print("The list of failed frames is:")
+    print(asp_df[asp_df['failed_flag']==True]['frame'])
+
+    return asp_df.set_index('frame')
 
 
 def make_file_names(opt):
@@ -14,17 +52,18 @@ def make_file_names(opt):
 
     #TODO: don't hardcode all the path names :)
 
-    main_path = opt['output_directory']
-    xylist_folder = f'{main_path}xylists/'
+    main_path = opt['output_dir']
+    aspect_solns = f'{main_path}aspect_solns/'
+    xylist_folder = f'{main_path}xylists_lower_thresh/e09869/'
     astrometry_temp = f'{main_path}astrometry_temp/'
 
     eclipse = str(opt['eclipse']).zfill(5)
 
     # main refined aspect solution
     if opt['threshold'] and opt['star_size'] is None:
-        asp_df = f"{main_path}e{eclipse}_aspect_soln_{opt['expt']}s"
+        asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s"
     else:
-        asp_df = f"{main_path}e{eclipse}_aspect_soln_{opt['expt']}s_thresh{opt['threshold']}" \
+        asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s_thresh{opt['threshold']}" \
                  f"_size{opt['star_size']}_dose_gaia_tycho"
 
     fits_table = []
@@ -44,7 +83,7 @@ def make_file_names(opt):
             frame_path.append(str(image_path + f"e{eclipse}-nd-{opt['expt']}s-"
                                                f"f{frame_padded}-rice.fits")) # 0-
             # for each frame, resulting new wcs
-            output_wcs.append(f"/home/bekah/glcat/astrometry/aspect_correction/frame{i}.wcs")
+            output_wcs.append((i, f"/home/bekah/glcat/astrometry/aspect_correction/frame{i}.wcs")) # tuple of frame and wcs path
             # verified wcs list
             ver_wcs.append(f"/home/bekah/glcat/astrometry/aspect_correction/e21442/e21442-"
                            f"nd-1s-f{frame_padded}-rice.wcs")
@@ -63,7 +102,7 @@ def make_file_names(opt):
         for i in range(opt['num_frames']):
             # for feeding xylist to astrometry.net
             # think there's a fancier list comprehension way to do this but can't google bc on a plane
-            fits_table.append(f'{astrometry_temp}frame{i}.xyls')
+            fits_table.append(f'{xylist_folder}frame{i}.xyls')
             # paths to movie frame images, largely used for an image or verification run
             frame_padded = str(i).zfill(5)
             time_padded = str(opt['expt']).zfill(4)
@@ -97,14 +136,21 @@ def get_ra_dec(eclipse):
     return ra, dec
 
 
-def get_aspect_from_wcs(wcs_path):
-    """To get the new ra and dec for each frame, open the output wcs file."""
-    #TODO: it would be nice to not have to close and open so many files, also check
-    # that these files actually each close after use
-    frame_wcs = fits.open(wcs_path)
-    new_center_ra = frame_wcs[0].header["CRVAL1"]
-    new_center_dec = frame_wcs[0].header["CRVAL2"]
-    return new_center_ra, new_center_dec
+def get_aspect_from_wcsinfo(wcs_path):
+    """returns 1 row pd df with columns that are wcs values read from the
+    astrometry.net output wcs file read w/ astrometry.net program wcsinfo,
+     we use wcsinfo instead of reading the wcs header because it returns more
+     information using other functions within astrometry.net (ie could
+     recreate wcsinfo ourselves but it's a lot of work and written in c)."""
+    output = subprocess.check_output(f"wcsinfo {wcs_path}",
+                                     stderr=subprocess.STDOUT,
+                                     shell=True)
+    output = output.decode()  # bc was bytes not str
+    output = "name value\n"+output
+    frame_wcs = pd.read_csv(io.StringIO(output), sep=' ')
+    frame_wcs = frame_wcs.set_index('name')
+    frame_wcs = frame_wcs.transpose()
+    return frame_wcs
 
 
 def zero_flag_and_edge(cnt, flag, edge):
@@ -116,7 +162,19 @@ def zero_flag_and_edge(cnt, flag, edge):
     return cnt
 
 
+#---- OLD FUNCTIONS -----
+
 def clean_up(file_names, i):
-    cmd = f"rm {file_names['astrometry_temp']}*"
-    subprocess.call(cmd, shell=True)
+    #cmd = f"rm glcat_tests/astrometry_temp/*"
+    #subprocess.call(cmd, shell=True)
     return None
+
+def get_aspect_from_wcs(wcs_path):
+    """To get the new ra and dec for each frame, open the output wcs file."""
+    #TODO: it would be nice to not have to close and open so many files, also check
+    # that these files actually each close after use
+    frame_wcs = fits.open(wcs_path)
+    new_center_ra = frame_wcs[0].header["CRVAL1"]
+    new_center_dec = frame_wcs[0].header["CRVAL2"]
+    return new_center_ra, new_center_dec
+
