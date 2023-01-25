@@ -5,17 +5,6 @@
     Uses astrometry.net (https://astrometry.net/) takes astronomical images and uses "catalogs"
      to solve for refined aspect solutions. """
 
-from pyarrow import parquet
-from astropy.table import Table
-import sys
-import numpy as np
-import fitsio
-import pandas as pd
-from astropy.io import fits
-from astropy import wcs
-import numpy.ma as ma
-import subprocess
-import os.path
 from typing import Optional
 from xylist_runs import run_xylist_on_image, run_xylist
 from image_runs import run_image_frame, run_image, run_verification
