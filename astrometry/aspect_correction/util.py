@@ -6,9 +6,33 @@ import os
 import pandas as pd
 import subprocess
 import io
+from astropy.io import fits
+from typing import Optional
 
 
-def make_refined_aspect_table(file_names):
+def crop_xylist(xylist, xylist_cropped, x_dim, y_dim):
+
+    if x_dim != y_dim:
+        print("XYlist cannot be cropped because image is not a square.")
+        return
+    elif x_dim == y_dim:
+        xy_list = fits.open(xylist)
+        tbdata = xy_list[1].data
+        # cropping to between 700 and 2500 in the x and y directions
+        selected = (tbdata['X'] > 200) & (tbdata['X'] < 3000) & (tbdata['Y'] > 200) & (tbdata['Y'] < 3000)
+        newtbdata = tbdata[selected]
+        # resetting so that the origin of cropped area is 0
+        hdu = fits.BinTableHDU(data=newtbdata)
+        hdu.data['X'] = hdu.data['X'] - 200
+        hdu.data['Y'] = hdu.data['Y'] - 200
+        hdu.writeto(xylist_cropped, overwrite=True)
+        # 700 subtracted twice from both axis, so it's 1400
+        new_dims = (3200-400, 3200-400)
+
+    return new_dims
+
+
+def make_refined_aspect_table(file_names, crop: Optional[bool] = False):
     """makes pandas df with wcs info for all frames, including failed ones."""
     # making an empty dataframe with column names, could pull col names from first
     # returned df but would get messy if first few frames failed
@@ -25,20 +49,81 @@ def make_refined_aspect_table(file_names):
                                    'ramin', 'ramax', 'ra_min_merc', 'ra_max_merc',
                                    'dec_min_merc', 'dec_max_merc', 'merc_diff',
                                    'merczoom', 'failed_flag'])
-    for frame, wcs_path in file_names["output_wcs"]:
+    if crop:
+        wcs_list = file_names["output_wcs_cropped"]
+    else:
+        wcs_list = file_names["output_wcs"]
+
+    for frame, wcs_path in wcs_list:
         if os.path.exists(wcs_path):
             frame_wcs = get_aspect_from_wcsinfo(wcs_path)
             frame_wcs["frame"] = frame
             asp_df = pd.concat([asp_df, frame_wcs])
         if not os.path.exists(wcs_path):
-            #print("This frame failed via xylist, marking as failed in aspect df.")
             frame_no_wcs = pd.DataFrame(columns=['frame', 'failed_flag'])
             frame_no_wcs["frame"] = frame
             frame_no_wcs["failed_flag"] = True
             asp_df = pd.concat([asp_df, frame_no_wcs])
+    asp_df = asp_df.set_index('frame')
+    asp_df = asp_df.astype(
+        {'crpix0': 'int64',
+         'crpix1': 'int64',
+         'crval0': 'float64',
+         'ra_tangent': 'float64',
+         'dec_tangent': 'float64',
+         'pixx_tangent': 'int64',
+         'pixy_tangent': 'int64',
+         'imagew': 'int64',
+         'imageh': 'int64',
+         'cd11': 'float64',
+         'cd12': 'float64',
+         'cd21': 'float64',
+         'cd22': 'float64',
+         'det': 'float64',
+         'parity': 'int64',
+         'pixscale': 'float64',
+         'orientation': 'float64',
+         'ra_center': 'float64',
+         'dec_center': 'float64',
+         'orientation_center': 'float64',
+         'ra_center_h': 'int64',
+         'ra_center_m': 'int64',
+         'ra_center_s': 'float64',
+         'dec_center_sign': 'int64',
+         'dec_center_d': 'int64',
+         'dec_center_m': 'int64',
+         'dec_center_s': 'float64',
+         'ra_center_hms': 'O',
+         'dec_center_dms': 'O',
+         'ra_center_merc': 'float64',
+         'dec_center_merc': 'float64',
+         'fieldarea': 'float64',
+         'fieldw': 'float64',
+         'fieldh': 'float64',
+         'fieldunits': 'O',
+         'decmin': 'float64',
+         'decmax': 'float64',
+         'ramin': 'float64',
+         'ramax': 'float64',
+         'ra_min_merc': 'float64',
+         'ra_max_merc': 'float64',
+         'dec_min_merc': 'float64',
+         'dec_max_merc': 'float64',
+         'merc_diff': 'float64',
+         'merczoom': 'int64',
+         'failed_flag': 'float64',
+         'crval1': 'float64'})
+    # adds rows for failed frames
+    asp_df = asp_df.reindex(range(1641), method=None)
     print("The list of failed frames is:")
-    print(asp_df[asp_df['failed_flag']==True]['frame'])
-    return asp_df.set_index('frame')
+    null_list = asp_df.index[asp_df.isnull().all(1)].to_list()
+    null_df = {'failed_frames': null_list}
+    null_df = pd.DataFrame(null_df)
+    print(null_list)
+    null_df.to_csv(file_names["null_list"])
+    # linearly interpolates
+    asp_df = asp_df.interpolate(method='linear', limit_direction='both', axis=0)
+    return asp_df
 
 
 def make_file_names(opt):
@@ -52,16 +137,23 @@ def make_file_names(opt):
     # directories
     main_path = opt['output_dir']
     aspect_solns = f'{main_path}aspect_solns/'
-    xylist_folder = f'{main_path}xylists_lower_thresh/e09869_0.8_3/'
+    xylist_folder = "/home/bekah/gphoton_working/test_data/e09869/" #f"{main_path}xylists_9871/e09871/" #f'{main_path}xylists_lower_thresh/e09869_0.8_3/'
     astrometry_temp = f'{main_path}astrometry_temp/'
     eclipse = str(opt['eclipse']).zfill(5)
     dose_image_path = f'/home/bekah/glcat/astrometry/e{eclipse}/dose_t2_selection_2/'
     image_path = f'/home/bekah/glcat/astrometry/e{eclipse}/'
     # main refined aspect solution
     if opt['threshold'] and opt['star_size'] is None:
-        asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s"
+        if opt["crop"]:
+             asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}_s_cropped"
+        else:
+            asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}_s"
     else:
-        asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s_thresh" \
+        if opt["crop"]:
+            asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s_thresh" \
+                     f"{opt['threshold']}_size{opt['star_size']}_cropped"
+        else:
+            asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s_thresh" \
                  f"{opt['threshold']}_size{opt['star_size']}_dose_gaia_tycho"
     # image paths
     frame_path = []
@@ -80,23 +172,32 @@ def make_file_names(opt):
                                                f"f{frame_padded}-g_dose.fits")) # 0-
     # wcs and xylist paths
     output_wcs = []
+    output_wcs_cropped = []
     ver_wcs = []
     fits_table = []
+    fits_table_cropped = []
     for i in range(opt['num_frames']):
         frame_padded = str(i).zfill(5)
         # for feeding xylist to astrometry.net
         # think there's a fancier list comprehension way to do this but can't google bc on a plane
         fits_table.append(f'{xylist_folder}frame{i}.xyls')
+        # for if we want to crop an area out of xylist by coordinates
+        fits_table_cropped.append(f'{xylist_folder}frame{i}_crop.xyls')
         # for each frame, resulting new wcs
         output_wcs.append((i, f"{astrometry_temp}frame{i}.wcs"))
+        # for cropped xylists wcs
+        output_wcs.append((i, f"{astrometry_temp}frame{i}_crop.wcs"))
         # verified wcs list
         ver_wcs.append(f"{astrometry_temp}e21442-nd-1s-f{frame_padded}-rice.wcs")
     # may not be used, for output of a verification run
     verified_df = f"{astrometry_temp}e{eclipse}_aspect_soln_{opt['expt']}s_" \
                       f"thresh{opt['threshold']}_size{opt['star_size']}_verified"
+    null_list = f"{aspect_solns}e{eclipse}_null_frames_{opt['expt']}s.csv"
     file_names = {"asp_df": asp_df, "verified_df": verified_df, "xylist": fits_table,
-                  "frame_path": frame_path, "output_wcs": output_wcs, "ver_wcs": ver_wcs,
-                  "astrometry_temp": astrometry_temp}
+                  "xylist_cropped": fits_table_cropped,
+                  "frame_path": frame_path, "output_wcs": output_wcs,
+                  "output_wcs_cropped": output_wcs_cropped, "ver_wcs": ver_wcs,
+                  "astrometry_temp": astrometry_temp, "null_list": null_list}
     return file_names
 
 

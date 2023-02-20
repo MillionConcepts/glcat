@@ -3,10 +3,10 @@
 
 from astropy.io import fits
 import subprocess
-from util import zero_flag_and_edge, get_ra_dec, make_refined_aspect_table
+from util import zero_flag_and_edge, get_ra_dec, make_refined_aspect_table, crop_xylist
 
 
-def run_xylist(eclipse, expt, num_frames, file_names, dose):
+def run_xylist(eclipse, expt, num_frames, file_names, dose, crop):
     """Handler for running astrometry.net with xylists, our main way to run it.
     This means it only intakes picture info, as well as a list of star x, y
     positions."""
@@ -25,9 +25,16 @@ def run_xylist(eclipse, expt, num_frames, file_names, dose):
             image_height = 3200
             crpix_x = 1600
             crpix_y = 1600
-            run_astrometry_net(eclipse, i, expt, file_names, image_width, image_height, ra,
-                               dec, crpix_x, crpix_y)
-    asp_df = make_refined_aspect_table(file_names)
+            if crop:
+                image_width, image_height = crop_xylist(file_names["xylist"][i], file_names["xylist_cropped"][i],
+                                                        image_width, image_height)
+                print(f"New image width and height are: {image_width}, {image_height}")
+                run_astrometry_net(eclipse, i, expt, file_names, image_width, image_height, ra,
+                                   dec, crpix_x, crpix_y, xylist_type="xylist_cropped")
+            else:
+                run_astrometry_net(eclipse, i, expt, file_names, image_width, image_height, ra,
+                                   dec, crpix_x, crpix_y, xylist_type="xylist")
+    asp_df = make_refined_aspect_table(file_names, crop)
     return asp_df
 
 
@@ -73,7 +80,7 @@ def run_xylist_on_image(eclipse, expt, num_frames, file_names, dose, **opt):
 
 
 def run_astrometry_net(eclipse, i, expt, file_names, image_width, image_height, ra,
-                       dec, crpix_x, crpix_y):
+                       dec, crpix_x, crpix_y, xylist_type):
     """ Main call to astrometry.net:
     solve-field: command to solve for aspect solution
     --overwrite: write over files
@@ -90,11 +97,11 @@ def run_astrometry_net(eclipse, i, expt, file_names, image_width, image_height, 
 
     print(f"Running astrometry.net on {expt} s frame of {eclipse}.")
     print(f"Frame is near {ra}, {dec}.")
-    print(f"xylist path is: {file_names['xylist'][i]}")
+    print(f"xylist path is: {file_names[xylist_type][i]}")
     cmd = f"solve-field --overwrite --no-plots --dir {file_names['astrometry_temp']} -w {image_width} -e {image_height} " \
-          f"--scale-units arcsecperpix --scale-low 1.4 --scale-high 1.6 " \
+          f"--scale-units arcsecperpix --scale-low 1.48 --scale-high 1.52 " \
           f"-N none -U none --axy none -B none -M none -R none " \
-          f" -3 {ra} -4 {dec} --crpix-x {crpix_x} --crpix-y {crpix_y} --radius 3 {file_names['xylist'][i]}"
+          f" -3 {ra} -4 {dec} --crpix-x {crpix_x} --crpix-y {crpix_y} --radius 3 {file_names[xylist_type][i]}"
     # --no-tweak
     # f" --verify '/home/bekah/glcat/astrometry/e{eclipse}/e{eclipse}-nd-{expt}s-0-f0000-rice.fits' --verify-ext 1 " \
     # -L 1.2 -H 1.8 -u app

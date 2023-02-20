@@ -19,7 +19,8 @@ def execute_refiner(
                     dose: Optional[bool] = False,
                     threshold: Optional[float] = None,
                     star_size: Optional[int] = None,
-                    output_directory: Optional[str] = "/home/bekah/glcat_tests/"
+                    output_directory: Optional[str] = "/home/bekah/glcat_tests/",
+                    crop: Optional[bool] = True
                     ):
     """
     Args:
@@ -35,6 +36,8 @@ def execute_refiner(
         star_size: what size of star dao is looking for, will probably
          vary with the frame length used in the run
         output_directory: where to save the files
+        crop: should we crop out a square in the middle of the eclipse
+        to use for refinement, instead of the whole image? only for xylists.
      """
     print(f"Running refiner for eclipse {eclipse}.")
     opt = {
@@ -45,7 +48,8 @@ def execute_refiner(
         'star_size': star_size,
         'dose': dose,
         'run_type': run_type,
-        'output_dir': output_directory
+        'output_dir': output_directory,
+        'crop': crop
     }
     print(f"There are {num_frames} {expt} second depth frames for eclipse {eclipse}.")
     print(f"Making file name dictionary. File names will be saved to: {output_directory}")
@@ -62,7 +66,7 @@ def execute_refiner(
     if run_type == "xylist":
         # fastest way to get aspect
         print("Running astrometry.net on xylists.")
-        asp_df = run_xylist(eclipse, expt, num_frames, file_names, dose)
+        asp_df = run_xylist(eclipse, expt, num_frames, file_names, dose, crop)
         print("Writing aspect solutions to csv.")
         asp_df.to_csv(file_names["asp_df"])
         return
