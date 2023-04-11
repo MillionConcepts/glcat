@@ -8,7 +8,7 @@
 from typing import Optional
 from xylist_runs import run_xylist_on_image, run_xylist
 from image_runs import run_image_frame, run_image, run_verification
-from util import make_file_names
+from util import make_file_names, make_refined_aspect_table
 
 
 def execute_refiner(
@@ -28,7 +28,8 @@ def execute_refiner(
         expt: number of seconds per frame used in gphoton2, for file name
         num_frames: can come up with a better way to do this, currently just
          for knowing how many times to run loop2
-        run_type: can be "image", "verify", "xylist", or "xylist_from_image".
+        run_type: can be "make_aspect_df_only", "image", "verify", "xylist",
+         or "xylist_from_image".
          xylist runs DAOstarfinder and feeds list of sources to astrometry.net,
          image feeds the image directly to astrometry.net. image takes longest.
         dose: are we using dose maps?
@@ -56,6 +57,11 @@ def execute_refiner(
     file_names = make_file_names(opt)
     # if you want to rerun the aspect correction to hopefully "refine" the solution, ends run
     # after verification
+    if run_type == "make_aspect_df_only":
+        files = make_file_names(opt)
+        asp_df = make_refined_aspect_table(files)
+        asp_df.to_csv(files["asp_df"])
+        return
     if run_type == "xylist_from_image":
         # doesn't use pre-made xylists
         print("Running astrometry.net on xylists derived from frame images.")
@@ -68,6 +74,7 @@ def execute_refiner(
         print("Running astrometry.net on xylists.")
         asp_df = run_xylist(eclipse, expt, num_frames, file_names, dose, crop)
         print("Writing aspect solutions to csv.")
+        print(asp_df)
         asp_df.to_csv(file_names["asp_df"])
         return
     if run_type == "verify":

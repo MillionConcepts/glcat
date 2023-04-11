@@ -36,7 +36,7 @@ def make_refined_aspect_table(file_names, crop: Optional[bool] = False):
     """makes pandas df with wcs info for all frames, including failed ones."""
     # making an empty dataframe with column names, could pull col names from first
     # returned df but would get messy if first few frames failed
-    asp_df = pd.DataFrame(columns=['frame', 'crpix0', 'crpix1', 'crval0', 'ra_tangent',
+    asp_df = pd.DataFrame(columns=['frame', 'crpix0', 'crpix1', 'crval1', 'crval0', 'ra_tangent',
                                    'dec_tangent', 'pixx_tangent', 'pixy_tangent',
                                    'imagew', 'imageh', 'cd11', 'cd12', 'cd21', 'cd22',
                                    'det', 'parity', 'pixscale', 'orientation',
@@ -53,6 +53,8 @@ def make_refined_aspect_table(file_names, crop: Optional[bool] = False):
         wcs_list = file_names["output_wcs_cropped"]
     else:
         wcs_list = file_names["output_wcs"]
+
+    print(wcs_list)
 
     for frame, wcs_path in wcs_list:
         if os.path.exists(wcs_path):
@@ -114,13 +116,13 @@ def make_refined_aspect_table(file_names, crop: Optional[bool] = False):
          'failed_flag': 'float64',
          'crval1': 'float64'})
     # adds rows for failed frames
-    asp_df = asp_df.reindex(range(1641), method=None)
-    print("The list of failed frames is:")
-    null_list = asp_df.index[asp_df.isnull().all(1)].to_list()
-    null_df = {'failed_frames': null_list}
-    null_df = pd.DataFrame(null_df)
-    print(null_list)
-    null_df.to_csv(file_names["null_list"])
+    #asp_df = asp_df.reindex(range(1641), method=None)
+    #print("The list of failed frames is:")
+    #null_list = asp_df.index[asp_df.isnull().all(1)].to_list()
+    #null_df = {'failed_frames': null_list}
+    #null_df = pd.DataFrame(null_df)
+    #print(null_list)
+    #null_df.to_csv(file_names["null_list"])
     # linearly interpolates
     asp_df = asp_df.interpolate(method='linear', limit_direction='both', axis=0)
     return asp_df
@@ -137,25 +139,27 @@ def make_file_names(opt):
     # directories
     main_path = opt['output_dir']
     aspect_solns = f'{main_path}aspect_solns/'
-    xylist_folder = "/home/bekah/gphoton_working/test_data/e09869/" #f"{main_path}xylists_9871/e09871/" #f'{main_path}xylists_lower_thresh/e09869_0.8_3/'
+     #f"{main_path}xylists_9871/e09871/" #f'{main_path}xylists_lower_thresh/e09869_0.8_3/'
     astrometry_temp = f'{main_path}astrometry_temp/'
     eclipse = str(opt['eclipse']).zfill(5)
+    xylist_folder = f"/home/bekah/gphoton_working/test_data/e{eclipse}/"
     dose_image_path = f'/home/bekah/glcat/astrometry/e{eclipse}/dose_t2_selection_2/'
     image_path = f'/home/bekah/glcat/astrometry/e{eclipse}/'
     # main refined aspect solution
-    if opt['threshold'] and opt['star_size'] is None:
-        if opt["crop"]:
-             asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}_s_cropped"
-        else:
-            asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}_s"
-    else:
-        if opt["crop"]:
-            asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s_thresh" \
-                     f"{opt['threshold']}_size{opt['star_size']}_cropped"
-        else:
-            asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s_thresh" \
-                 f"{opt['threshold']}_size{opt['star_size']}_dose_gaia_tycho"
+    #if opt['threshold'] and opt['star_size'] is None:
+    #    if opt["crop"]:
+    #      asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}_s_cropped"
+    #     else:
+    #        asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}_s"
+    #else:
+    #    if opt["crop"]:
+    #        asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s_thresh" \
+    #             f"{opt['threshold']}_size{opt['star_size']}_cropped"
+    #    else:
+    #        asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s_thresh" \
+    #         f"{opt['threshold']}_size{opt['star_size']}_dose_gaia_tycho"
     # image paths
+    asp_df = f"/home/bekah/gphoton_working/astrom_test_data/e{eclipse}/astrometry_xy_{opt['expt']}s_{eclipse}"
     frame_path = []
     if not opt['dose']:
         for i in range(opt['num_frames']):
@@ -180,13 +184,16 @@ def make_file_names(opt):
         frame_padded = str(i).zfill(5)
         # for feeding xylist to astrometry.net
         # think there's a fancier list comprehension way to do this but can't google bc on a plane
-        fits_table.append(f'{xylist_folder}frame{i}.xyls')
+        #*********************
+        # FRAME EXTENSION (CHANGE)
+        frame_extension = f"_{opt['expt']}s_e{eclipse}"
+        fits_table.append(f'{xylist_folder}frame{i}{frame_extension}.xyls')
         # for if we want to crop an area out of xylist by coordinates
         fits_table_cropped.append(f'{xylist_folder}frame{i}_crop.xyls')
         # for each frame, resulting new wcs
-        output_wcs.append((i, f"{astrometry_temp}frame{i}.wcs"))
+        output_wcs.append((i, f"{astrometry_temp}frame{i}{frame_extension}.wcs"))
         # for cropped xylists wcs
-        output_wcs.append((i, f"{astrometry_temp}frame{i}_crop.wcs"))
+        output_wcs.append((i, f"{astrometry_temp}frame{i}{frame_extension}.wcs"))
         # verified wcs list
         ver_wcs.append(f"{astrometry_temp}e21442-nd-1s-f{frame_padded}-rice.wcs")
     # may not be used, for output of a verification run
