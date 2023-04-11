@@ -1,39 +1,56 @@
 
-from plots import make_plots
+from compare_aspect.plots import make_plots
 import subprocess
 import os
-from astrometry.aspect_correction.main import execute_refiner
+import astrometry.aspect_correction as asp
+from backplanes import make_backplanes
+import sys
 
-#TODO: add backplanes to produce dosemaps, modify aspect soln code, PSF fitting code
-# more error feedback for potential places it can go wrong
-# hard code less things: band, etc
-# ideally the output folder name also coordinates to the method
+sys.path.append('/home/bekah/gphoton_working')
+sys.path.append('/home/bekah/glcat/astrometry/aspect_correction')
+sys.path.append('/home/bekah/gphoton_working/gPhoton')
 
 
-def run_compare(eclipse, old_aspect, new_aspect_method):
+def run_compare(eclipse, band, old_aspect, new_aspect_method):
     """run comparison of a given aspect soln (usually the og pipeline one)
      and new aspect solution type, takes as an argument the type
     of aspect improvement to use (astrometry.net, astroalign, etc)
     Args:
      eclipse:eclipse number
+     band: "NUV" or "FUV"
      old_aspect:o.g. pipeline, could point to a diff method?
      new_aspect_method:'astrometry', 'astroalign', 'RANSAC', 'drizzlepac'
      """
+    print(f"Starting comparison run for eclipse {eclipse}, {band}.")
     file_names = make_file_names(eclipse, old_aspect, new_aspect_method)
-    # run backplanes to produce dosemaps
-
-    # produce new aspect solution
-    execute_refiner(eclipse, 1, 150, 'make_aspect_df_only', dose=True, crop=False)
-    # write new aspect solution to aspect2.parquet file
-    write_aspect2(eclipse, file_names)
     # run gphoton with old aspect solution parquet file
     # save output files to "test_data" and sub eclipse folder
     print(f"Running gphoton with old aspect solution file.")
-    run_gphoton(eclipse, "NUV", "test_data", "aspect")
+    run_gphoton(eclipse, band, "test_data", "aspect")
+    # run backplanes to produce dosemaps or xylists
+    # currently just xylists to save space
+    make_backplanes(
+        eclipse=eclipse,
+        band=band,
+        depth=1,
+        leg=0,
+        threads=4,
+        burst=True,
+        local="/home/bekah/gphoton_working/test_data",
+        kind="dose",
+        radius=400,
+        write={'array': False, 'xylist': True},
+        inline=True,
+        threshold=.75,
+        star_size=2)
+    # produce new aspect solution
+    asp.main.execute_refiner(eclipse, 1, 150, 'xylist', dose=True, crop=False)
+    # write new aspect solution to aspect2.parquet file
+    write_aspect2(eclipse, file_names)
     # run gphoton with new aspect solution parquet file (aspect2)
     # save output files to "astrom_test_data" and sub eclipse folder
     print(f"Running gphoton with new aspect solution file.")
-    run_gphoton(eclipse, "NUV", "astrom_test_data", "aspect2")
+    run_gphoton(eclipse, band, "astrom_test_data", "aspect2")
     # check outputs to make sure it worked
     if check_outputs(file_names):
         return f"gphoton failed to produce the expected images."
@@ -41,13 +58,6 @@ def run_compare(eclipse, old_aspect, new_aspect_method):
     make_plots(eclipse, old_aspect, new_aspect_method, file_names)
     # fit PSF and compare FWHM of how ever many stars in full-depth images produced
     # by each run
-
-    return
-
-
-def run_aspect(new_aspect_method):
-    """aspect correction method call"""
-
     return
 
 

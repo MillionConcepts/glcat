@@ -10,6 +10,10 @@ import fast_histogram as fh
 import numpy as np
 import pandas as pd
 import sh
+import sys
+sys.path.append('/home/bekah/gphoton_working')
+sys.path.append('/home/bekah/gphoton_working/gPhoton')
+
 from gPhoton.types import GalexBand
 from more_itertools import windowed
 from pyarrow import parquet
