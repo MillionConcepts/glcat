@@ -2,12 +2,12 @@
 from compare_aspect.plots import make_plots
 import subprocess
 import os
-import astrometry.aspect_correction as asp
+import aspect_correction as asp
 from backplanes import make_backplanes
 import sys
 
 sys.path.append('/home/bekah/gphoton_working')
-sys.path.append('/home/bekah/glcat/astrometry/aspect_correction')
+sys.path.append('/home/bekah/glcat/aspect_correction')
 sys.path.append('/home/bekah/gphoton_working/gPhoton')
 
 
