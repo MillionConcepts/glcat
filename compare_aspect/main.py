@@ -26,9 +26,10 @@ def run_compare(eclipse, band, old_aspect, new_aspect_method):
     # run gphoton with old aspect solution parquet file
     # save output files to "test_data" and sub eclipse folder
     print(f"Running gphoton with old aspect solution file.")
-    run_gphoton(eclipse, band, "test_data", "aspect")
+    run_gphoton(eclipse, band, "/home/bekah/gphoton_working/test_data/", "aspect")
     # run backplanes to produce dosemaps or xylists
     # currently just xylists to save space
+    print("writing dosemap backplanes")
     make_backplanes(
         eclipse=eclipse,
         band=band,
@@ -44,6 +45,7 @@ def run_compare(eclipse, band, old_aspect, new_aspect_method):
         threshold=.75,
         star_size=2)
     # produce new aspect solution
+    print("running aspect refiner")
     asp.main.execute_refiner(eclipse, 1, 150, 'xylist', dose=True, crop=False)
     # write new aspect solution to aspect2.parquet file
     write_aspect2(eclipse, file_names)
@@ -64,8 +66,9 @@ def run_compare(eclipse, band, old_aspect, new_aspect_method):
 def run_gphoton(eclipse, band, local_root, aspect):
     """use gphoton's cli hooks to run and save to a designated directory w/
     unique names"""
-    cmd = f"python pipeline_cli.py {eclipse} {band} --threads=4 --local_root={local_root}" \
-          f"--compression=rice --extended_photonlist=True --aspect={aspect}"
+    cmd = f"python /home/bekah/gphoton_working/pipeline_cli.py {eclipse} {band}" \
+          f" --threads=4 --local_root={local_root}" \
+          f" --compression=rice --extended_photonlist=True --aspect={aspect} --verbose=4"
     subprocess.call(cmd, shell=True)
 
     return
@@ -100,6 +103,7 @@ def write_aspect2(eclipse, file_names):
 
 
 def make_file_names(eclipse, old_aspect, new_aspect_method):
+    # edit to reflect any changes to gphoton params or aspect ref params
     oldbase = f"/home/bekah/gphoton_working/test_data/e{eclipse}/"
     newbase = f"/home/bekah/gphoton_working/astrom_test_data/e{eclipse}/"
     compbase = f"/home/bekah/gphoton_working/test_data_comp/e{eclipse}/"
@@ -107,14 +111,15 @@ def make_file_names(eclipse, old_aspect, new_aspect_method):
     old_image_file = oldbase+f"e{padded_eclipse}-nd-tfull-b00-image-r.fits"
     new_image_file = newbase+f"e{padded_eclipse}-nd-tfull-b00-image-r.fits"
     image_comparison = compbase+f"e{eclipse}+image_comp.jpg"
-    old_aspect = oldbase
+    old_photom_file = oldbase+f"e{eclipse}-nd-tfull-b00-image-photom-12_8.csv"
     new_aspect = newbase+f"astrometry_xy_1s_{eclipse}"
     ra_dec_plot = compbase+f"e{eclipse}_ra_dec_comp.jpg"
     old_asp_title = f"e{eclipse} old asp"
     new_asp_title = f"e{eclipse} new asp"
+    star_cutouts = compbase+f"e{eclipse}_star_cutouts.jpg"
     file_names = {'old_image_file': old_image_file, 'new_image_file': new_image_file,
-                  'image_comparison': image_comparison, 'old_aspect': old_aspect,
-                  'new_aspect': new_aspect, 'ra_dec_plot': ra_dec_plot,
+                  'image_comparison': image_comparison, 'old_photom_file': old_photom_file,
+                  'new_aspect': new_aspect, 'ra_dec_plot': ra_dec_plot, 'star_cutouts': star_cutouts,
                   'old_asp_title': old_asp_title, 'new_asp_title': new_asp_title}
     return file_names
 

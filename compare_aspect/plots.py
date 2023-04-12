@@ -62,10 +62,6 @@ def roll_plot(old_aspect, new_aspect, file_names):
     return
 
 
-def fwhm_plot():
-
-    return
-
 def centile_clip(image, centiles=(0, 90)):
     """
     simple clipping function that clips values above and below a given
