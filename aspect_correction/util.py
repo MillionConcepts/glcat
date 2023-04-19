@@ -157,7 +157,8 @@ def make_file_names(opt):
     #        asp_df = f"{aspect_solns}e{eclipse}_aspect_soln_{opt['expt']}s_thresh" \
     #         f"{opt['threshold']}_size{opt['star_size']}_dose_gaia_tycho"
     # image paths
-    os.mkdir(f"/home/bekah/gphoton_working/astrom_test_data/e{eclipse}/")
+    if not os.path.exists(f"/home/bekah/gphoton_working/astrom_test_data/e{eclipse}/"):
+        os.mkdir(f"/home/bekah/gphoton_working/astrom_test_data/e{eclipse}/")
     asp_df = f"/home/bekah/gphoton_working/astrom_test_data/e{eclipse}/astrometry_xy_{opt['expt']}s_{eclipse}"
     frame_path = []
     if not opt['dose']:

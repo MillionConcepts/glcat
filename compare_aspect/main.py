@@ -1,11 +1,11 @@
 
-from compare_aspect.plots import make_plots
 import subprocess
 import os
+import sys
 import aspect_correction as asp
 from backplanes import make_backplanes
-import sys
-
+from compare_aspect.psf_fitting import run_psf_compare
+from compare_aspect.plots import make_plots
 sys.path.append('/home/bekah/gphoton_working')
 sys.path.append('/home/bekah/glcat/aspect_correction')
 sys.path.append('/home/bekah/gphoton_working/gPhoton')
@@ -27,6 +27,7 @@ def run_compare(eclipse, band, old_aspect, new_aspect_method):
     # save output files to "test_data" and sub eclipse folder
     print(f"Running gphoton with old aspect solution file.")
     run_gphoton(eclipse, band, "/home/bekah/gphoton_working/test_data/", "aspect")
+    exptime = get_expt(file_names)
     # run backplanes to produce dosemaps or xylists
     # currently just xylists to save space
     print("writing dosemap backplanes")
@@ -46,13 +47,14 @@ def run_compare(eclipse, band, old_aspect, new_aspect_method):
         star_size=2)
     # produce new aspect solution
     print("running aspect refiner")
-    asp.main.execute_refiner(eclipse, 1, 150, 'xylist', dose=True, crop=False)
+    asp.main.execute_refiner(eclipse, 1, exptime, 'xylist', dose=True, crop=False)
     # write new aspect solution to aspect2.parquet file
+    print("writing aspect to aspect parquet 2")
     write_aspect2(eclipse, file_names)
     # run gphoton with new aspect solution parquet file (aspect2)
     # save output files to "astrom_test_data" and sub eclipse folder
     print(f"Running gphoton with new aspect solution file.")
-    run_gphoton(eclipse, band, "astrom_test_data", "aspect2")
+    run_gphoton(eclipse, band, "/home/bekah/gphoton_working/astrom_test_data/", "aspect2")
     # check outputs to make sure it worked
     if check_outputs(file_names):
         return f"gphoton failed to produce the expected images."
@@ -60,6 +62,7 @@ def run_compare(eclipse, band, old_aspect, new_aspect_method):
     make_plots(eclipse, old_aspect, new_aspect_method, file_names)
     # fit PSF and compare FWHM of how ever many stars in full-depth images produced
     # by each run
+    run_psf_compare(file_names)
     return
 
 
@@ -97,23 +100,25 @@ def write_aspect2(eclipse, file_names):
         df2 = new_aspect_df.filter(['ra_center', 'dec_center', 'orientation'], axis=1)
         df2['eclipse'] = eclipse
         # have to rename columns to ra, dec, and roll bc that's how og aspect parq is
-        df2.rename(columns={"ra_center": "ra", "dec_center": "dec", "orientation": "roll"})
+        df2 = df2.rename(columns={"ra_center": "ra", "dec_center": "dec", "orientation": "roll"})
         # save as parquet
-        df2.to_parquet('/home/bekah/gphoton_working/gPhoton/aspect2.parquet', compression=None)
+        df2.to_parquet('/home/bekah/gphoton_working/gPhoton/aspect/aspect2.parquet', compression=None)
 
 
 def make_file_names(eclipse, old_aspect, new_aspect_method):
     # edit to reflect any changes to gphoton params or aspect ref params
-    oldbase = f"/home/bekah/gphoton_working/test_data/e{eclipse}/"
-    newbase = f"/home/bekah/gphoton_working/astrom_test_data/e{eclipse}/"
-    compbase = f"/home/bekah/gphoton_working/test_data_comp/e{eclipse}/"
     padded_eclipse = str(eclipse).zfill(5)
+    oldbase = f"/home/bekah/gphoton_working/test_data/e{padded_eclipse}/"
+    newbase = f"/home/bekah/gphoton_working/astrom_test_data/e{padded_eclipse}/"
+    compbase = f"/home/bekah/gphoton_working/test_data_comp/e{padded_eclipse}/"
+    if not os.path.exists(f"/home/bekah/gphoton_working/test_data_comp/e{padded_eclipse}/"):
+         os.mkdir(f"/home/bekah/gphoton_working/test_data_comp/e{padded_eclipse}/")
     old_image_file = oldbase+f"e{padded_eclipse}-nd-tfull-b00-image-r.fits"
     new_image_file = newbase+f"e{padded_eclipse}-nd-tfull-b00-image-r.fits"
-    image_comparison = compbase+f"e{eclipse}+image_comp.jpg"
-    old_photom_file = oldbase+f"e{eclipse}-nd-tfull-b00-image-photom-12_8.csv"
+    image_comparison = compbase+f"e{padded_eclipse}+image_comp.jpg"
+    old_photom_file = oldbase+f"e{padded_eclipse}-nd-tfull-b00-image-photom-12_8.csv"
     new_aspect = newbase+f"astrometry_xy_1s_{eclipse}"
-    ra_dec_plot = compbase+f"e{eclipse}_ra_dec_comp.jpg"
+    ra_dec_plot = compbase+f"e{padded_eclipse}_ra_dec_comp.jpg"
     old_asp_title = f"e{eclipse} old asp"
     new_asp_title = f"e{eclipse} new asp"
     star_cutouts = compbase+f"e{eclipse}_star_cutouts.jpg"
@@ -123,5 +128,11 @@ def make_file_names(eclipse, old_aspect, new_aspect_method):
                   'old_asp_title': old_asp_title, 'new_asp_title': new_asp_title}
     return file_names
 
+
+def get_expt(file_names):
+    from astropy.io import fits
+    image = fits.open(file_names['old_image_file'])
+    expt = image[1].header["EXPTIME"]
+    return int(expt)
 
 

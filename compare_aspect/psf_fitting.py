@@ -18,20 +18,27 @@ def run_psf_compare(file_names):
     og_stars = cutout_stars(stars_tbl, file_names['old_image_file'])
     # new stars cutout (same star locations)
     new_stars = cutout_stars(stars_tbl, file_names['new_image_file'])
+
+    make_psf_plots(og_stars, file_names)
+
     psf_comparison_tab = pd.DataFrame()
-    for x in range(int(len(og_stars)*.2)):
+    for x in range(int(len(og_stars)*.1)):
         # i is random star to compare from photom table produced by gphoton
         # doing 20% of total number of stars rn
-        i = random.randint(len(stars_tbl)-1)
+        #i = random.randint(len(stars_tbl)-1)
+        i = x
         og_result_tab = fit_gaussian_prf(og_stars[i].data)
         new_result_tab = fit_gaussian_prf(new_stars[i].data)
-        result1 = og_result_tab.to_pandas()
-        result1["star"] = i
-        result1["aspect_type"] = 'og'
-        result2 = new_result_tab.to_pandas()
-        result2["star"] = i
-        result2["aspect_type"] = 'new'
-        psf_comparison_tab = pd.concat([psf_comparison_tab, result1, result2], ignore_index=True)
+        if len(og_result_tab) != 0:
+            result1 = og_result_tab.to_pandas()
+            result1["star"] = i
+            result1["aspect_type"] = 'og'
+            psf_comparison_tab = pd.concat([psf_comparison_tab, result1], ignore_index=True)
+        if len(new_result_tab) != 0:
+            result2 = new_result_tab.to_pandas()
+            result2["star"] = i
+            result2["aspect_type"] = 'new'
+            psf_comparison_tab = pd.concat([psf_comparison_tab, result2], ignore_index=True)
 
     return psf_comparison_tab
 
@@ -66,8 +73,6 @@ def fit_gaussian_prf(image):
     result_tab = photometry(image=image)
     #residual_image = photometry.get_residual_image()
 
-    if len(result_tab) == 0:
-        return
     return result_tab
 
 
@@ -103,6 +108,11 @@ def get_good_stars(file_names):
     """get xy list of stars in astropy table, currently using
     gphoton2 main for star detection"""
     photom_table = pd.read_csv(file_names['old_photom_file'])
+    # these column names in the photom table only apply if the tables were produced
+    # with the new image seg used in new extraction branch of gphoton
+    photom_table = photom_table[photom_table['area'] > 16]
+    photom_table = photom_table[photom_table['area'] > 60]
+    photom_table = photom_table[photom_table['segment_flux'] > .5]
     stars_tbl = Table()
     stars_tbl['x'] = photom_table['xcentroid']
     stars_tbl['y'] = photom_table['ycentroid']
@@ -125,6 +135,7 @@ def cutout_stars(stars_tbl, imagefile):
     # extract stars, can be done on multiple images
     stars = extract_stars(nddata, stars_tbl, size=21)
     return stars
+
 
 def make_psf_plots(stars, file_names):
     """plot 25 of the star cutouts used for the psf fitting"""
