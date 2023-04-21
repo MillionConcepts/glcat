@@ -23,18 +23,11 @@ def image_plot(file_names):
     fig, axs = plt.subplots(2)
     old_image = fits.open(file_names['old_image_file'])
     new_image = fits.open(file_names['new_image_file'])
-    axs[0].imshow(centile_clip(old_image[1].data, (0, 99)), interpolation='none', cmap='Greys_r', origin='lower')
-    axs[1].imshow(centile_clip(new_image[1].data, (0, 99)), interpolation='none', cmap='Greys_r', origin='lower')
+    axs[0].imshow(centile_clip(old_image[1].data, (0, 99)),
+                  interpolation='none', cmap='Greys_r', origin='lower')
+    axs[1].imshow(centile_clip(new_image[1].data, (0, 99)),
+                  interpolation='none', cmap='Greys_r', origin='lower')
     plt.savefig(file_names['image_comparison'])
-    return
-
-
-def aspect_plots(eclipse,file_names):
-    #old_aspect =
-    #return [parquet.read_table(path, filters=("eclipse", "=", eclipse)) #pd.read_csv(file_names['old_aspect'])
-   # new_aspect = pd.read_csv(file_names['new_aspect'])
-   # ra_dec_plot(old_aspect, new_aspect, file_names)
-    #roll_plot(old_aspect, new_aspect, file_names)
     return
 
 
