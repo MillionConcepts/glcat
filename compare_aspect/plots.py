@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-def make_plots(eclipse, old_aspect, new_aspect_method, file_names):
+def make_plots(file_names):
     """main plot-making function for comparing aspect soln results"""
 
     # full depth image plots

@@ -10,7 +10,7 @@ import numpy as np
 from compare_aspect.plots import centile_clip
 
 
-def run_psf_compare(file_names):
+def run_psf_compare(file_names, runtype):
     """ extract cutouts of stars from two different images using star
     locations id'd in a photometry file, filtered by area & flux to
     get relatively bright and small stars, fit a gaussian psf to each
@@ -18,26 +18,27 @@ def run_psf_compare(file_names):
     images. """
     # use photom results from gphoton to get star locations to compare
     stars_tbl = get_good_stars(file_names)
-    # og stars cutout
-    og_stars = cutout_stars(stars_tbl, file_names['old_image_file'])
-    # new stars cutout (same star locations)
+    if runtype != "short":
+        # og stars cutout
+        og_stars = cutout_stars(stars_tbl, file_names['old_image_file'])
+        # pic of star cutouts
+        make_psf_plots(og_stars, file_names)
+    # new stars cutout (same star locations)6
     new_stars = cutout_stars(stars_tbl, file_names['new_image_file'])
-    # pic of star cutouts
-    make_psf_plots(og_stars, file_names)
-
     psf_comparison_tab = pd.DataFrame()
-    for x in range(int(len(og_stars)*.1)):
+    for x in range(int(len(og_stars)*.5)):
         # currently only fitting psfs for 10% of stars in the sample...
         # subject to change, this saves time right now
-        og_result_tab = fit_gaussian_prf(og_stars[x].data)
+        if runtype != "short":
+            og_result_tab = fit_gaussian_prf(og_stars[x].data)
+            if len(og_result_tab) != 0:
+                result1 = og_result_tab.to_pandas()
+                result1["star"] = x
+                result1["aspect_type"] = 'og'
+                psf_comparison_tab = pd.concat([psf_comparison_tab,
+                                                result1],
+                                               ignore_index=True)
         new_result_tab = fit_gaussian_prf(new_stars[x].data)
-        if len(og_result_tab) != 0:
-            result1 = og_result_tab.to_pandas()
-            result1["star"] = x
-            result1["aspect_type"] = 'og'
-            psf_comparison_tab = pd.concat([psf_comparison_tab,
-                                            result1],
-                                           ignore_index=True)
         if len(new_result_tab) != 0:
             result2 = new_result_tab.to_pandas()
             result2["star"] = x
@@ -45,7 +46,6 @@ def run_psf_compare(file_names):
             psf_comparison_tab = pd.concat([psf_comparison_tab,
                                             result2],
                                            ignore_index=True)
-
     return psf_comparison_tab
 
 

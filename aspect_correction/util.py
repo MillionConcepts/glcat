@@ -190,7 +190,7 @@ def make_file_names(opt):
         # for each frame, resulting new wcs
         output_wcs.append((i, f"{astrometry_temp}frame{i}{frame_extension}.wcs"))
         # for cropped xylists wcs
-        output_wcs.append((i, f"{astrometry_temp}frame{i}{frame_extension}.wcs"))
+        output_wcs_cropped.append((i, f"{astrometry_temp}frame{i}{frame_extension}.wcs"))
         # verified wcs list
         ver_wcs.append(f"{astrometry_temp}e21442-nd-1s-f{frame_padded}-rice.wcs")
     # may not be used, for output of a verification run

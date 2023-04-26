@@ -15,7 +15,8 @@ sys.path.append('/home/bekah/gphoton_working/gPhoton')
 def run_compare(
         eclipse,
         band,
-        runnote: Optional[str] = None
+        runtype: Optional[str] = None,
+        runnote=""
 ):
     """run comparison of a given aspect soln (usually the og pipeline one)
      and new aspect solution type, takes as an argument the type
@@ -23,62 +24,69 @@ def run_compare(
     Args:
      eclipse:eclipse number
      band: "NUV" or "FUV"
+     runtype: None or with "short" you can specify if you only
+     want to run aspect refiner and psf fitting on the resulting
+     image using a pre-existing xy / photom list (just sidesteps
+     first gphoton run & psf fitting), or "psf_only" only does
+     psf fitting on existing files (must be properly named)
      runnote: optional string to add to the end of output filenames
      """
     print(f"Starting comparison run for eclipse {eclipse}, {band}.")
     file_names = make_file_names(eclipse, runnote)
     # run gphoton with old aspect solution parquet file
-    # save output files to "test_data" and sub eclipse folder
-    print(f"Running gphoton with old aspect solution file.")
-    run_gphoton(
-        eclipse,
-        band,
-        "/home/bekah/gphoton_working/test_data/",
-        "aspect"
-    )
-    exptime = get_expt(file_names)
-    # run backplanes to produce dosemaps or xylists
-    # currently just xylists to save space
-    print("writing dosemap backplanes")
-    make_backplanes(
-        eclipse=eclipse,
-        band=band,
-        depth=1,
-        leg=0,
-        threads=4,
-        burst=True,
-        local="/home/bekah/gphoton_working/test_data",
-        kind="dose",
-        radius=400,
-        write={'array': False, 'xylist': True},
-        inline=True,
-        threshold=.75,
-        star_size=2
-    )
-    # produce new aspect solution
-    print("running aspect refiner")
-    asp.main.execute_refiner(eclipse, 1, exptime, 'xylist', dose=True, crop=False)
-    # write new aspect solution to aspect2.parquet file
-    print("writing aspect to aspect parquet 2")
-    write_aspect2(eclipse, file_names)
-    # run gphoton with new aspect solution parquet file (aspect2)
-    # save output files to "astrom_test_data" and sub eclipse folder
-    print(f"Running gphoton with new aspect solution file.")
-    run_gphoton(
-        eclipse,
-        band,
-        "/home/bekah/gphoton_working/astrom_test_data/",
-        "aspect2"
-    )
-    # check outputs to make sure it worked
-    if check_outputs(file_names):
-        return f"gphoton failed to produce the expected images."
+    # save output files to "test_datadda" and sub eclipse folder
+    if runtype != "psf_only":
+        if runtype != "short":
+            print(f"Running gphoton with old aspect solution file.")
+            run_gphoton(
+                eclipse,
+                band,
+                "/home/bekah/gphoton_working/test_data/",
+                "aspect"
+            )
+        exptime = get_expt(file_names)
+        # run backplanes to produce dosemaps or xylists
+        # currently just xylists to save space
+        print("writing dosemap backplanes")
+        make_backplanes(
+            eclipse=eclipse,
+            band=band,
+            depth=1,
+            leg=0,
+            threads=4,
+            burst=True,
+            local="/home/bekah/gphoton_working/test_data",
+            kind="dose",
+            radius=400,
+            write={'array': False, 'xylist': True},
+            inline=True,
+            threshold=.75,
+            star_size=2
+        )
+        # produce new aspect solution
+        print("running aspect refiner")
+        asp.main.execute_refiner(eclipse, 1, exptime, 'xylist', dose=True, crop=True)
+        # write new aspect solution to aspect2.parquet file
+        print("writing aspect to aspect parquet 2")
+        write_aspect2(eclipse, file_names)
+        # run gphoton with new aspect solution parquet file (aspect2)
+        # save output files to "astrom_test_data" and sub eclipse folder
+        print(f"Running gphoton with new aspect solution file.")
+        run_gphoton(
+            eclipse,
+            band,
+            "/home/bekah/gphoton_working/astrom_test_data/",
+            "aspect2"
+        )
+        # check outputs to make sure it worked
+        if check_outputs(file_names):
+            return f"gphoton failed to produce the expected images."
     # produce plots comparing images and aspect solutions produced by both runs
-    make_plots(eclipse, file_names)
+    make_plots(file_names)
     # fit PSF and compare FWHM of how ever many stars in full-depth images produced
     # by each run
     print("running psf fitting")
-    psf_comparison_tab = run_psf_compare(file_names)
+    psf_comparison_tab = run_psf_compare(file_names, runtype)
     print(f"saving psf fitting results to csv at {file_names['psf_comp']}")
     psf_comparison_tab.to_csv(file_names['psf_comp'])
     return
@@ -132,13 +140,13 @@ def write_aspect2(eclipse, file_names):
     return
 
 
-def make_file_names(eclipse, runnote: Optional[str] = None):
+def make_file_names(eclipse, runnote=""):
     """make file names for running aspect comparison. will need to be updated
     should not-Bekah need to use, or if gphoton file names change bc of diff
     run params.
     Args:
         eclipse: the eclipse number of the run, will get padded
-         runnote: optional way to add text to output file names
+        runnote: optional way to add text to output file names
          to distinguish diff kinds of runs on the fly """
     padded_eclipse = str(eclipse).zfill(5)
     # set up dirs and make dirs if they don't exist
@@ -149,27 +157,22 @@ def make_file_names(eclipse, runnote: Optional[str] = None):
     if not os.path.exists(compbase):
          os.mkdir(compbase)
     # outputs images
-    old_image_file = oldbase+\
-                     f"e{padded_eclipse}" \
-                             f"-nd-tfull-b00-image-r"+{runnote}+".fits"
-    new_image_file = newbase+\
-                     f"e{padded_eclipse}" \
-                             f"-nd-tfull-b00-image-r"+{runnote}+".fits"
-    image_comparison = compbase+\
-                       f"e{padded_eclipse}" \
-                       f"+image_comp"+{runnote}+".jpg"
-    old_photom_file = oldbase+\
-                      f"e{padded_eclipse}" \
-                      f"-nd-tfull-b00-image-photom-12_8"+{runnote}+".csv"
+    old_image_file = oldbase+f"e{padded_eclipse}" \
+                             f"-nd-tfull-b00-image-r.fits"
+    new_image_file = newbase+f"e{padded_eclipse}" \
+                             f"-nd-tfull-b00-image-r.fits"
+    image_comparison = compbase+f"e{padded_eclipse}" \
+                       f"+image_comp"+runnote+".jpg"
+    old_photom_file = oldbase+f"e{padded_eclipse}" \
+                      f"-nd-tfull-b00-image-photom-12_8.csv"
     new_aspect = newbase+\
-                 f"astrometry_xy_1s_{padded_eclipse}"+{runnote}
+                 f"astrometry_xy_1s_{padded_eclipse}"
     ra_dec_plot = compbase+\
-                  f"e{padded_eclipse}_ra_dec_comp"\
-                  +{runnote}+".jpg"
+                  f"e{padded_eclipse}_ra_dec_comp"+runnote+".jpg"
     old_asp_title = f"e{eclipse} old asp"
     new_asp_title = f"e{eclipse} new asp"
-    star_cutouts = compbase+f"e{eclipse}_star_cutouts"+{runnote}+".jpg"
-    psf_comp = compbase+f"e{eclipse}_psf"+{runnote}+".csv"
+    star_cutouts = compbase+f"e{eclipse}_star_cutouts"+runnote+".jpg"
+    psf_comp = compbase+f"e{eclipse}_psf"+runnote+".csv"
     aspect_parq = base + "gPhoton/aspect/aspect2.parquet"
     file_names = {'old_image_file': old_image_file,
                   'new_image_file': new_image_file,

@@ -58,9 +58,9 @@ def execute_refiner(
     # if you want to rerun the aspect correction to hopefully "refine" the solution, ends run
     # after verification
     if run_type == "make_aspect_df_only":
-        files = make_file_names(opt)
-        asp_df = make_refined_aspect_table(files)
-        asp_df.to_csv(files["asp_df"])
+        print(f"Writing aspect solutions to csv: {file_names['asp_df']} ")
+        asp_df = make_refined_aspect_table(file_names)
+        asp_df.to_csv(file_names["asp_df"])
         return
     if run_type == "xylist_from_image":
         # doesn't use pre-made xylists
