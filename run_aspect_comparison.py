@@ -2,6 +2,6 @@ from compare_aspect.main import run_compare
 
 if __name__ == "__main__":
     run_compare(
-        9869, "NUV", runtype="psf_only", runnote="crop")
+        10982, "NUV", runnote="", local_root="/home/bekah/gphoton_working/")
 
 

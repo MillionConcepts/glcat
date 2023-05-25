@@ -3,7 +3,7 @@
 
 from astropy.io import fits
 import subprocess
-from aspect_correction.util import zero_flag_and_edge, get_ra_dec, make_refined_aspect_table, crop_xylist
+from util import zero_flag_and_edge, get_ra_dec, make_refined_aspect_table, crop_xylist
 
 
 def run_xylist(eclipse, expt, num_frames, file_names, dose, crop):
@@ -21,10 +21,10 @@ def run_xylist(eclipse, expt, num_frames, file_names, dose, crop):
             print(f"No xylist written for this frame {i}.")
         else:
             #TODO: pull from wcs file instead of hard-coding?
-            image_width = 3200
-            image_height = 3200
-            crpix_x = 1600
-            crpix_y = 1600
+            image_width = 3200 #3200
+            image_height = 3200 # 3200 MIS
+            crpix_x = 1600 # 1600 MIS
+            crpix_y = 1600 # 1600
             if crop:
                 image_width, image_height = crop_xylist(file_names["xylist"][i], file_names["xylist_cropped"][i],
                                                         image_width, image_height)
@@ -101,10 +101,11 @@ def run_astrometry_net(eclipse, i, expt, file_names, image_width, image_height, 
     cmd = f"solve-field --overwrite --no-plots --dir {file_names['astrometry_temp']} -w {image_width} -e {image_height} " \
           f"--scale-units arcsecperpix --scale-low 1.48 --scale-high 1.52 " \
           f"-N none -U none --axy none -B none -M none -R none " \
-          f" -3 {ra} -4 {dec} --crpix-x {crpix_x} --crpix-y {crpix_y} --radius 3 {file_names[xylist_type][i]}"
+          f" -3 {ra} -4 {dec} --crpix-x {crpix_x} --crpix-y {crpix_y} --radius 5 {file_names[xylist_type][i]}"
     # --no-tweak
     # f" --verify '/home/bekah/glcat/astrometry/e{eclipse}/e{eclipse}-nd-{expt}s-0-f0000-rice.fits' --verify-ext 1 " \
     # -L 1.2 -H 1.8 -u app
+    # RADIUS USED TO BE 3
 
     subprocess.call(cmd, shell=True)
 

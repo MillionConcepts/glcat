@@ -60,6 +60,7 @@ def make_refined_aspect_table(file_names, crop: Optional[bool] = False):
             frame_wcs["frame"] = frame
             asp_df = pd.concat([asp_df, frame_wcs])
         if not os.path.exists(wcs_path):
+            print(f"Frame {frame} failed.")
             frame_no_wcs = pd.DataFrame(columns=['frame', 'failed_flag'])
             frame_no_wcs["frame"] = frame
             frame_no_wcs["failed_flag"] = True
@@ -115,11 +116,11 @@ def make_refined_aspect_table(file_names, crop: Optional[bool] = False):
          'crval1': 'float64'})
     # adds rows for failed frames
     #asp_df = asp_df.reindex(range(1641), method=None)
-    #print("The list of failed frames is:")
-    #null_list = asp_df.index[asp_df.isnull().all(1)].to_list()
-    #null_df = {'failed_frames': null_list}
-    #null_df = pd.DataFrame(null_df)
-    #print(null_list)
+    print("The list of failed frames is:")
+    null_list = asp_df.index[asp_df.isnull().all(1)].to_list()
+    null_df = {'failed_frames': null_list}
+    null_df = pd.DataFrame(null_df)
+    print(null_list)
     #null_df.to_csv(file_names["null_list"])
     # linearly interpolates
     asp_df = asp_df.interpolate(method='linear', limit_direction='both', axis=0)
@@ -140,6 +141,7 @@ def make_file_names(opt):
      #f"{main_path}xylists_9871/e09871/" #f'{main_path}xylists_lower_thresh/e09869_0.8_3/'
     astrometry_temp = f'{main_path}astrometry_temp/'
     eclipse = str(opt['eclipse']).zfill(5)
+    leg = str(opt['leg']).zfill(2)
     xylist_folder = f"/home/bekah/gphoton_working/test_data/e{eclipse}/"
     dose_image_path = f'/home/bekah/glcat/astrometry/e{eclipse}/dose_t2_selection_2/'
     image_path = f'/home/bekah/glcat/astrometry/e{eclipse}/'
@@ -172,7 +174,7 @@ def make_file_names(opt):
             # paths to movie frame images, largely used for an image or verification run
             frame_padded = str(i).zfill(5)
             time_padded = str(opt['expt']).zfill(4)
-            frame_path.append(str(dose_image_path + f"e{eclipse}-nd-t{time_padded}-b00-"
+            frame_path.append(str(dose_image_path + f"e{eclipse}-nd-t{time_padded}-b{leg}-"
                                                f"f{frame_padded}-g_dose.fits")) # 0-
     # wcs and xylist paths
     output_wcs = []

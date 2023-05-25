@@ -7,6 +7,7 @@ import aspect_correction as asp
 from backplanes import make_backplanes
 from compare_aspect.psf_fitting import run_psf_compare
 from compare_aspect.plots import make_plots
+import pandas as pd
 sys.path.append('/home/bekah/gphoton_working')
 sys.path.append('/home/bekah/glcat/aspect_correction')
 sys.path.append('/home/bekah/gphoton_working/gPhoton')
@@ -16,6 +17,7 @@ def run_compare(
         eclipse,
         band,
         runtype: Optional[str] = None,
+        local_root="/home/bekah/gphoton_working/",
         runnote=""
 ):
     """run comparison of a given aspect soln (usually the og pipeline one)
@@ -24,45 +26,47 @@ def run_compare(
     Args:
      eclipse:eclipse number
      band: "NUV" or "FUV"
-     runtype: None or with "short" you can specify if you only
-     want to run aspect refiner and psf fitting on the resulting
-     image using a pre-existing xy / photom list (just sidesteps
-     first gphoton run & psf fitting), or "psf_only" only does
-     psf fitting on existing files (must be properly named)
+     runtype: stop after which part of the pipeline? "backplanes",
+     "aspect_ref", "psf_only"
+     local_root: where files go
      runnote: optional string to add to the end of output filenames
      """
     print(f"Starting comparison run for eclipse {eclipse}, {band}.")
-    file_names = make_file_names(eclipse, runnote)
+    file_names = make_file_names(eclipse, local_root, runnote)
     # run gphoton with old aspect solution parquet file
-    # save output files to "test_datadda" and sub eclipse folder
+    # save output files to "test_data" and sub eclipse folder
     if runtype != "psf_only":
-        if runtype != "short":
+        exptime = get_expt(file_names)
+        if runtype != "aspect_ref":
             print(f"Running gphoton with old aspect solution file.")
             run_gphoton(
                 eclipse,
                 band,
-                "/home/bekah/gphoton_working/test_data/",
+                file_names['old_root'],
+                file_names,
                 "aspect"
             )
-        exptime = get_expt(file_names)
-        # run backplanes to produce dosemaps or xylists
-        # currently just xylists to save space
-        print("writing dosemap backplanes")
-        make_backplanes(
-            eclipse=eclipse,
-            band=band,
-            depth=1,
-            leg=0,
-            threads=4,
-            burst=True,
-            local="/home/bekah/gphoton_working/test_data",
-            kind="dose",
-            radius=400,
-            write={'array': False, 'xylist': True},
-            inline=True,
-            threshold=.75,
-            star_size=2
-        )
+            # run backplanes to produce dosemaps or xylists
+            # currently just xylists to save space
+            print("writing dosemap backplanes")
+            make_backplanes(
+                eclipse=eclipse,
+                band=band,
+                depth=1,
+                leg=0,
+                threads=4,
+                burst=True,
+                local="/home/bekah/gphoton_working/test_data",
+                kind="dose",
+                radius=400,
+                write={'array': False, 'xylist': True},
+                inline=True,
+                threshold=.75,
+                star_size=2
+            )
+            if runtype == "backplanes":
+                print("Run done, backplanes completed!")
+                return
         # produce new aspect solution
         print("running aspect refiner")
         asp.main.execute_refiner(eclipse, 1, exptime, 'xylist', dose=True, crop=True)
@@ -75,8 +79,9 @@ def run_compare(
         run_gphoton(
             eclipse,
             band,
-            "/home/bekah/gphoton_working/astrom_test_data/",
-            "aspect2"
+            file_names['new_root'],
+            file_names,
+            "aspect2",
         )
         # check outputs to make sure it worked
         if check_outputs(file_names):
@@ -92,10 +97,10 @@ def run_compare(
     return
 
 
-def run_gphoton(eclipse, band, local_root, aspect):
+def run_gphoton(eclipse, band, local_root, file_names, aspect):
     """use gphoton's cli hooks to run and save to a designated directory w/
     unique names"""
-    cmd = f"python /home/bekah/gphoton_working/pipeline_cli.py {eclipse} {band}" \
+    cmd = f"python {file_names['gphoton_cli']} {eclipse} {band}" \
           f" --threads=4 --local_root={local_root}" \
           f" --compression=rice --extended_photonlist=True --aspect={aspect} --verbose=4"
     subprocess.call(cmd, shell=True)
@@ -107,7 +112,6 @@ def check_outputs(file_names):
     """check that gphoton produced the expected files"""
     if os.path.exists(file_names['old_image_file']):
         if os.path.exists(file_names['new_image_file']):
-            print("Both full-depth images created successfully in gPhoton.")
             return False
     print("One or both full-depth images failed in gPhoton.")
     return True
@@ -117,13 +121,20 @@ def write_aspect2(eclipse, file_names):
     """takes refined aspect table df and turns it into an aspect2 parquet
      file formatted the same as the og aspect parquet file so it can be
       read by gphoton, overwrites whatever is previously called
-      aspect2.parquet in the gphoton aspect folder"""
-    import pandas as pd
-    # import pyarrow
-    # check if refined aspect table exists
+      aspect2.parquet in the gphoton aspect folder. adds time and flag
+      info from og aspect."""
+    from pyarrow import parquet
+
+    # loading aspect table to add time stamp and flags
+    # TODO: change this file address to be in dict
+    parq = parquet.read_table(file_names['old_aspect_parq'])
+    aspect = parq.to_pandas()
+    aspect = aspect[aspect["eclipse"] == eclipse]
+    aspect = aspect.reset_index()
+
     if os.path.exists(file_names['new_aspect']):
         new_aspect_df = pd.read_csv(file_names['new_aspect'])
-        df2 = new_aspect_df.filter(['ra_center',
+        df2 = new_aspect_df.filter(['frame', 'ra_center',
                                     'dec_center',
                                     'orientation'],
                                    axis=1)
@@ -133,27 +144,40 @@ def write_aspect2(eclipse, file_names):
         df2 = df2.rename(columns={"ra_center": "ra",
                                   "dec_center": "dec",
                                   "orientation": "roll"})
-        # save as parquet
-        df2.to_parquet(file_names["aspect_parq"], compression=None)
+        df2 = df2.set_index('frame')
+        df2 = df2.reindex(range(len(aspect)), fill_value=0)
+        df2 = df2.astype({'ra': 'float64',
+                          'dec': 'float64',
+                          'roll': 'float64'})
+        df2 = df2.interpolate(method='linear',
+                              limit_direction='both',
+                              axis=0)
+
+        new_parq = pd.concat([df2, aspect.filter(['time', 'flags'])],
+                             axis=1)
+        # save to parquet
+        new_parq.to_parquet(file_names["aspect_parq"], compression=None)
+
     elif not os.path.exists(file_names['new_aspect']):
         print("new aspect solution does not exist.")
+        return
     return
 
 
-def make_file_names(eclipse, runnote=""):
+def make_file_names(eclipse, local_root, runnote=""):
     """make file names for running aspect comparison. will need to be updated
     should not-Bekah need to use, or if gphoton file names change bc of diff
     run params.
     Args:
         eclipse: the eclipse number of the run, will get padded
+        local_root: where files are, also local root for gphoton
         runnote: optional way to add text to output file names
          to distinguish diff kinds of runs on the fly """
     padded_eclipse = str(eclipse).zfill(5)
     # set up dirs and make dirs if they don't exist
-    base = "/home/bekah/gphoton_working/"
-    oldbase = f"{base}test_data/e{padded_eclipse}/"
-    newbase = f"{base}astrom_test_data/e{padded_eclipse}/"
-    compbase = f"{base}test_data_comp/e{padded_eclipse}/"
+    oldbase = f"{local_root}test_data/e{padded_eclipse}/"
+    newbase = f"{local_root}astrom_test_data/e{padded_eclipse}/"
+    compbase = f"{local_root}test_data_comp/e{padded_eclipse}/"
     if not os.path.exists(compbase):
          os.mkdir(compbase)
     # outputs images
@@ -173,8 +197,10 @@ def make_file_names(eclipse, runnote=""):
     new_asp_title = f"e{eclipse} new asp"
     star_cutouts = compbase+f"e{eclipse}_star_cutouts"+runnote+".jpg"
     psf_comp = compbase+f"e{eclipse}_psf"+runnote+".csv"
-    aspect_parq = base + "gPhoton/aspect/aspect2.parquet"
-    file_names = {'old_image_file': old_image_file,
+    aspect_parq = f'{local_root}gPhoton/aspect/aspect2.parquet'
+    old_aspect_parq = f'{local_root}gPhoton/aspect/aspect.parquet'
+    file_names = {'gphoton_cli': f"{local_root}pipeline_cli.py",
+                  'old_image_file': old_image_file,
                   'new_image_file': new_image_file,
                   'image_comparison': image_comparison,
                   'old_photom_file': old_photom_file,
@@ -184,7 +210,11 @@ def make_file_names(eclipse, runnote=""):
                   'old_asp_title': old_asp_title,
                   'new_asp_title': new_asp_title,
                   'psf_comp': psf_comp,
-                  'aspect_parq': aspect_parq}
+                  'old_asp_parq': old_aspect_parq,
+                  'aspect_parq': aspect_parq,
+                  'old_root': f"{local_root}test_data",
+                  'new_root': f"{local_root}astrom_test_data"
+    }
     return file_names
 
 

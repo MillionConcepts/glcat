@@ -3,7 +3,7 @@
 from astropy.io import fits
 import subprocess
 import os.path
-from aspect_correction.util import get_ra_dec, make_refined_aspect_table
+from util import get_ra_dec, make_refined_aspect_table
 
 
 def run_image(eclipse, expt, num_frames, file_names):

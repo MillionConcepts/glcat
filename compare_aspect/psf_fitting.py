@@ -17,6 +17,7 @@ def run_psf_compare(file_names, runtype):
     star. returns a table of stars with their gaussian fits for both
     images. """
     # use photom results from gphoton to get star locations to compare
+    global og_stars
     stars_tbl = get_good_stars(file_names)
     if runtype != "short":
         # og stars cutout
@@ -26,8 +27,7 @@ def run_psf_compare(file_names, runtype):
     # new stars cutout (same star locations)6
     new_stars = cutout_stars(stars_tbl, file_names['new_image_file'])
     psf_comparison_tab = pd.DataFrame()
-    for x in range(int(len(og_stars)*.5)):
-        # currently only fitting psfs for 10% of stars in the sample...
+    for x in range(int(len(stars_tbl)*.5)):
         # subject to change, this saves time right now
         if runtype != "short":
             og_result_tab = fit_gaussian_prf(og_stars[x].data)

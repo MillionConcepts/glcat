@@ -6,9 +6,9 @@
      to solve for refined aspect solutions. """
 
 from typing import Optional
-from aspect_correction.xylist_runs import run_xylist_on_image, run_xylist
-from aspect_correction.image_runs import run_image_frame, run_image, run_verification
-from aspect_correction.util import make_file_names, make_refined_aspect_table
+from xylist_runs import run_xylist_on_image, run_xylist
+from image_runs import run_image_frame, run_image, run_verification
+from util import make_file_names, make_refined_aspect_table
 
 
 def execute_refiner(
@@ -20,7 +20,8 @@ def execute_refiner(
                     threshold: Optional[float] = None,
                     star_size: Optional[int] = None,
                     output_directory: Optional[str] = "/home/bekah/glcat_tests/",
-                    crop: Optional[bool] = True
+                    crop: Optional[bool] = True,
+                    leg: Optional[int] = 0
                     ):
     """
     Args:
@@ -50,7 +51,8 @@ def execute_refiner(
         'dose': dose,
         'run_type': run_type,
         'output_dir': output_directory,
-        'crop': crop
+        'crop': crop,
+        'leg': leg
     }
     print(f"There are {num_frames} {expt} second depth frames for eclipse {eclipse}.")
     print(f"Making file name dictionary. File names will be saved to: {output_directory}")
