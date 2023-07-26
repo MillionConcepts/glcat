@@ -4,7 +4,7 @@ if __name__ == "__main__":
     make_backplanes(
         eclipse=10982,
         band="NUV",
-        depth=1,
+        depth=.1,
         leg=1,
         threads=4,
         burst=True,
@@ -16,14 +16,14 @@ if __name__ == "__main__":
         kind="dose",
         # detector radius cutoff -- only matters for dosemaps. pop up to ~750
         # if you want the stims.
-        radius=700,
+        radius=600,
         # write arrays / xylists? (xylists relevant only for dosemaps)
-        write={'array': True, 'xylist': True},
+        write={'array': True, 'xylist': False},
         # write arrays inline? possible only in burst mode.
         inline=True,
         # threshold and star_size for DAOStarFinder. matters only for
         # dosemap xylist
-        threshold=0.4,
+        threshold=.45,
         star_size=2
     )
 
