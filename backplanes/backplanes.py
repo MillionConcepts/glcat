@@ -71,10 +71,20 @@ def send_to_shared_memory(components, depth):
     return ax_blocks, tranges
 
 
-def load_for_dosemap(photonfile, radius=400):
-    phot = parquet.read_table(
-        photonfile, columns=['t', 'col', 'row', 'detrad']
-    )
+def load_for_dosemap(photonfile, radius=400, snippet: Optional[tuple] = None):
+    """ modified to allow for specific t-range selection (snippet) within
+     parquet file (for slew frames, for example) """
+    if snippet is None:
+        phot = parquet.read_table(
+            photonfile, columns=['t', 'col', 'row', 'detrad']
+        )
+    else:
+        # filter to load just rows for a specific time range
+        phot = parquet.read_table(
+            photonfile, columns=['t', 'col', 'row', 'detrad'],
+            filters=[('t','>',snippet[0]-1),('t','<',snippet[1]+1)]
+        )
+
     phot = select_on_detector(phot, radius)
     return {
         't': phot['t'].to_numpy(),
@@ -137,7 +147,7 @@ def write_xylist_inline(ctx, frame_ix, maps):
 
 
 def make_dosemap(ctx: PipeContext, radius: int = 400):
-    components = load_for_dosemap(ctx()['photonfile'], radius)
+    components = load_for_dosemap(ctx()['photonfile'], radius, ctx.snippet)
     if ctx.depth is None:
         maps = dosemap_frame(components, radius)
         if ctx.write['array'] is True:
@@ -331,7 +341,8 @@ def make_backplanes(
     stop_after: Optional[str] = None,
     inline: bool = True,
     threshold: float = 0.75,
-    star_size: float = 2
+    star_size: float = 2,
+    snippet: Optional[tuple] = None
 ):
     # noinspection PyTypeChecker
     write = {} if write is None else dict(write)
@@ -345,7 +356,8 @@ def make_backplanes(
         threads=threads,
         burst=burst,
         write=write,
-        stop_after=stop_after
+        stop_after=stop_after,
+        snippet=snippet
     )
     # TODO: consider propagating this little hack upstream
     ctx.hdu_constructor_kwargs = dict(ctx.hdu_constructor_kwargs)
