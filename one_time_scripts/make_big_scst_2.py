@@ -28,7 +28,6 @@ filtered_fields = {k: v for k, v in all_fields.items() if k in DESIRABLE_FIELDS}
 full_schema = pa.schema(filtered_fields)
 print("got schema")
 
-
 writer = parquet.ParquetWriter('extended_scst_7_16.parquet', full_schema)
 
 # second pass: actually make the table

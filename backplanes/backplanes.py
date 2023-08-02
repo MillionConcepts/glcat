@@ -78,8 +78,13 @@ def load_for_dosemap(photonfile, radius=400, snippet: Optional[tuple] = None):
         phot = parquet.read_table(
             photonfile, columns=['t', 'col', 'row', 'detrad']
         )
+        t = phot['t'][0]
     else:
         # filter to load just rows for a specific time range
+        phot = parquet.read_table(
+            photonfile, columns=['t', 'col', 'row', 'detrad']
+        )
+        t = phot['t'][0]
         phot = parquet.read_table(
             photonfile, columns=['t', 'col', 'row', 'detrad'],
             filters=[('t','>',snippet[0]-1),('t','<',snippet[1]+1)]
@@ -90,7 +95,7 @@ def load_for_dosemap(photonfile, radius=400, snippet: Optional[tuple] = None):
         't': phot['t'].to_numpy(),
         'x': phot['row'].to_numpy() * 4,
         'y': phot['col'].to_numpy() * 4
-    }
+    }, t
 
 
 def dosemap_ranges(radius):
@@ -121,7 +126,7 @@ def sm_make_dosemap(block_info, radius, frame_ix):
     return {'dose': dosemap_frame(axes, radius)}
 
 
-def sm_compute_dosemap_frame(block_info, imsz, frame_ix, ctx):
+def sm_compute_dosemap_frame(block_info, imsz, frame_ix, ctx, start_time):
     maps = sm_make_dosemap(block_info, imsz, frame_ix)
     for _, block in reference_shared_memory_arrays(
         block_info, fetch=False
@@ -130,7 +135,7 @@ def sm_compute_dosemap_frame(block_info, imsz, frame_ix, ctx):
         block.unlink()
     if ctx.write.get('xylist') is True:
         write_xylist_inline(ctx, frame_ix, maps)
-    return write_or_return_arrays(maps, frame_ix, ctx)
+    return write_or_return_arrays(maps, frame_ix, ctx, start_time)
 
 
 def write_xylist_inline(ctx, frame_ix, maps):
@@ -147,13 +152,13 @@ def write_xylist_inline(ctx, frame_ix, maps):
 
 
 def make_dosemap(ctx: PipeContext, radius: int = 400):
-    components = load_for_dosemap(ctx()['photonfile'], radius, ctx.snippet)
+    components, start_time = load_for_dosemap(ctx()['photonfile'], radius, ctx.snippet)
     if ctx.depth is None:
         maps = dosemap_frame(components, radius)
         if ctx.write['array'] is True:
             if ctx.write['xylist'] is True:
                 print('note: xylists not implemented for full-depth dosemaps.')
-            return write_backplane_image(maps, ctx)
+            return write_backplane_image(maps, ctx, start_time)
     print('slicing position data into shared memory')
     dose_blocks, tranges = send_to_shared_memory(components, ctx.depth)
     del components
@@ -163,11 +168,11 @@ def make_dosemap(ctx: PipeContext, radius: int = 400):
         if pool is not None:
             frames[frame_ix] = pool.apply_async(
                 sm_compute_dosemap_frame,
-                (dose_blocks[frame_ix], radius, frame_ix, ctx)
+                (dose_blocks[frame_ix], radius, frame_ix, ctx, start_time)
             )
         else:
             frames[frame_ix] = sm_compute_dosemap_frame(
-                dose_blocks[frame_ix], radius, frame_ix, ctx
+                dose_blocks[frame_ix], radius, frame_ix, ctx, start_time
             )
     if pool is not None:
         pool.close()
@@ -175,7 +180,7 @@ def make_dosemap(ctx: PipeContext, radius: int = 400):
         frames = {ix: frame.get() for ix, frame in frames.items()}
     ranges = dosemap_ranges(radius)
     imsz = [ranges[0][1] - ranges[0][0]] * 2
-    return write_backplane_movies(frames, imsz, ctx, tranges)
+    return write_backplane_movies(frames, imsz, ctx, tranges, start_time)
 
 
 def load_for_xymap(photonfile, radius=400):
@@ -245,38 +250,40 @@ def sm_compute_xymap_frame(block_info, imsz, frame_ix, ctx, wcs, tranges):
 
 
 def write_backplane_file(
-    image, ctx, tranges=None, wcs=None, name="", frame="movie"
+    image, ctx, start_time, tranges=None, wcs=None, name="", frame="movie"
 ):
     fn = ctx()['image'] if frame == 'image' else ctx(frame=frame)['movie']
+    print(ctx()['image'])
     fn = fn.replace('.fits.gz', f'_{name}.fits')
     for ext in ('', '.gz'):
         if Path(ctx.eclipse_path(), fn + ext).exists():
             Path(fn + ext).unlink()
     header = stub_header(ctx.band, wcs, tranges)
     hdu = astropy.io.fits.PrimaryHDU(image, header=header)
+    print(fn)
     hdu.writeto(fn)
     print(f'gzipping {name} {frame}')
     sh.igzip(fn)
     Path(fn).unlink()
 
 
-def write_backplane_image(maps, ctx, tranges=None, wcs=None):
+def write_backplane_image(maps, ctx, start_time, tranges=None, wcs=None):
     for name, image in maps.items():
-        write_backplane_file(image, ctx, tranges, wcs, name, 'image')
+        write_backplane_file(image, ctx, start_time, tranges, wcs, name, 'image')
 
 
 def sparse_to_movie(sparse, imsz):
     return np.dstack([f.to_dense().reshape(imsz) for f in sparse])
 
 
-def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None):
+def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None, start_time=0):
     if check_inline_write(ctx) is True:
         print("all outputs written inline; terminating.")
         return
     if ctx.write.get('array') is False:
         print('write["array"] = False; terminating.')
         return
-    args = (ctx, tranges, wcs)
+    args = (ctx, start_time, tranges, wcs)
     if ctx.burst is False:
         maps = {k: [] for k in frames[0].keys()}
         for ix in list(frames.keys()):
@@ -301,10 +308,10 @@ def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None):
 
 def make_xymaps(ctx: PipeContext):
     print("loading photonlist and computing wcs")
-    components, wcs, imsz = load_for_xymap(ctx()['photonfile'])
+    components, wcs, imsz, start_time = load_for_xymap(ctx()['photonfile'])
     if ctx.depth is None:
         maps = make_full_depth_xymaps(components, imsz)
-        return write_backplane_image(maps, ctx, None, wcs)
+        return write_backplane_image(maps, ctx, start_time, None, wcs)
     print('slicing position data into shared memory')
     ax_blocks, tranges = send_to_shared_memory(components, ctx.depth)
     del components
@@ -389,10 +396,10 @@ def check_inline_write(ctx):
     return False
 
 
-def write_or_return_arrays(maps, frame_ix, ctx, wcs=None, tranges=None):
+def write_or_return_arrays(maps, frame_ix, ctx, start_time, wcs=None, tranges=None):
     if check_inline_write(ctx):
         for k, v in maps.items():
-            write_backplane_file(v, ctx, tranges, wcs, k, frame_ix)
+            write_backplane_file(v, ctx, start_time, tranges, wcs, k, frame_ix)
         return
     elif ctx.write.get('array') is False:
         return
@@ -400,3 +407,4 @@ def write_or_return_arrays(maps, frame_ix, ctx, wcs=None, tranges=None):
         name: pd.arrays.SparseArray(array.ravel())
         for name, array in maps.items()
     }
+
