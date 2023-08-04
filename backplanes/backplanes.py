@@ -11,8 +11,9 @@ import numpy as np
 import pandas as pd
 import sh
 import sys
-sys.path.append('/home/bekah/gphoton_working')
-sys.path.append('/home/bekah/gphoton_working/gPhoton')
+#sys.path.append('/home/bekah/gphoton_working')
+sys.path.append('/home/bekah/gPhoton2')
+sys.path.append('/home/ubuntu/gPhoton2')
 
 from gPhoton.types import GalexBand
 from more_itertools import windowed
@@ -31,7 +32,7 @@ from gPhoton.sharing import (
 )
 from gPhoton.vorpal import between
 
-from astrometry.aspect_correction.main import get_stars, make_file_names
+#from astrometry.aspect_correction.main import get_stars, make_file_names
 
 
 def stub_header(band, wcs=None, tranges=None):
@@ -126,7 +127,7 @@ def sm_make_dosemap(block_info, radius, frame_ix):
     return {'dose': dosemap_frame(axes, radius)}
 
 
-def sm_compute_dosemap_frame(block_info, imsz, frame_ix, ctx, start_time):
+def sm_compute_dosemap_frame(block_info, imsz, frame_ix, ctx, start_time, time_stamp):
     maps = sm_make_dosemap(block_info, imsz, frame_ix)
     for _, block in reference_shared_memory_arrays(
         block_info, fetch=False
@@ -135,7 +136,7 @@ def sm_compute_dosemap_frame(block_info, imsz, frame_ix, ctx, start_time):
         block.unlink()
     if ctx.write.get('xylist') is True:
         write_xylist_inline(ctx, frame_ix, maps)
-    return write_or_return_arrays(maps, frame_ix, ctx, start_time)
+    return write_or_return_arrays(maps, frame_ix, ctx, start_time, time_stamp)
 
 
 def write_xylist_inline(ctx, frame_ix, maps):
@@ -163,16 +164,19 @@ def make_dosemap(ctx: PipeContext, radius: int = 400):
     dose_blocks, tranges = send_to_shared_memory(components, ctx.depth)
     del components
     frames = {}
+    time_stamps = {}
     pool = Pool(ctx.threads) if ctx.threads is not None else None
     for frame_ix, trange in enumerate(tranges):
+        # frame value is trange[0] - start time of eclipse
+        time_stamps[frame_ix] = trange[0]-start_time.as_py()
         if pool is not None:
             frames[frame_ix] = pool.apply_async(
                 sm_compute_dosemap_frame,
-                (dose_blocks[frame_ix], radius, frame_ix, ctx, start_time)
+                (dose_blocks[frame_ix], radius, frame_ix, ctx, start_time, time_stamps[frame_ix])
             )
         else:
             frames[frame_ix] = sm_compute_dosemap_frame(
-                dose_blocks[frame_ix], radius, frame_ix, ctx, start_time
+                dose_blocks[frame_ix], radius, frame_ix, ctx, start_time, time_stamps[frame_ix]
             )
     if pool is not None:
         pool.close()
@@ -180,7 +184,7 @@ def make_dosemap(ctx: PipeContext, radius: int = 400):
         frames = {ix: frame.get() for ix, frame in frames.items()}
     ranges = dosemap_ranges(radius)
     imsz = [ranges[0][1] - ranges[0][0]] * 2
-    return write_backplane_movies(frames, imsz, ctx, tranges, start_time)
+    return write_backplane_movies(frames, imsz, ctx, tranges, start_time, time_stamps)
 
 
 def load_for_xymap(photonfile, radius=400):
@@ -250,17 +254,23 @@ def sm_compute_xymap_frame(block_info, imsz, frame_ix, ctx, wcs, tranges):
 
 
 def write_backplane_file(
-    image, ctx, start_time, tranges=None, wcs=None, name="", frame="movie"
-):
-    fn = ctx()['image'] if frame == 'image' else ctx(frame=frame)['movie']
-    print(ctx()['image'])
+    image, ctx, start_time, tranges=None, wcs=None, name="", frame="movie", time_stamp=0):
+    if frame == 'image':
+        fn = ctx()['image']
+    else:
+        #fNNNNdd_tNNNNdd
+        fn = ctx(frame=frame)['movie']
+        split_time = str(time_stamp).split('.')
+        N = split_time[0].zfill(4)
+        # first 4 of decimal place
+        d = split_time[1][:4]
+        fn = fn.replace('movie', f't{N}{d}')
     fn = fn.replace('.fits.gz', f'_{name}.fits')
     for ext in ('', '.gz'):
         if Path(ctx.eclipse_path(), fn + ext).exists():
             Path(fn + ext).unlink()
     header = stub_header(ctx.band, wcs, tranges)
     hdu = astropy.io.fits.PrimaryHDU(image, header=header)
-    print(fn)
     hdu.writeto(fn)
     print(f'gzipping {name} {frame}')
     sh.igzip(fn)
@@ -276,7 +286,7 @@ def sparse_to_movie(sparse, imsz):
     return np.dstack([f.to_dense().reshape(imsz) for f in sparse])
 
 
-def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None, start_time=0):
+def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None, start_time=0, time_stamps=None):
     if check_inline_write(ctx) is True:
         print("all outputs written inline; terminating.")
         return
@@ -293,7 +303,7 @@ def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None, start_time=0):
         for name in list(maps.keys()):
             print(f'writing {name}')
             write_backplane_file(
-                sparse_to_movie(maps[name], imsz), *args, name, "movie"
+                sparse_to_movie(maps[name], imsz), *args, name, "movie", time_stamps[name]
             )
             del maps[name]
         return
@@ -301,7 +311,7 @@ def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None, start_time=0):
         for name, sparse in frames[ix].items():
             print(f'writing {name} (frame {ix})')
             write_backplane_file(
-                sparse.to_dense().reshape(imsz), *args, name, str(ix).zfill(5)
+                sparse.to_dense().reshape(imsz), *args, name, str(ix).zfill(5), time_stamps[name]
             )
         del frames[ix]
 
@@ -363,6 +373,7 @@ def make_backplanes(
         threads=threads,
         burst=burst,
         write=write,
+        start_time=1000,
         stop_after=stop_after,
         snippet=snippet
     )
@@ -396,10 +407,10 @@ def check_inline_write(ctx):
     return False
 
 
-def write_or_return_arrays(maps, frame_ix, ctx, start_time, wcs=None, tranges=None):
+def write_or_return_arrays(maps, frame_ix, ctx, start_time, time_stamp, wcs=None, tranges=None):
     if check_inline_write(ctx):
         for k, v in maps.items():
-            write_backplane_file(v, ctx, start_time, tranges, wcs, k, frame_ix)
+            write_backplane_file(v, ctx, start_time, tranges, wcs, k, frame_ix, time_stamp)
         return
     elif ctx.write.get('array') is False:
         return

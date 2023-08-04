@@ -4,14 +4,14 @@ if __name__ == "__main__":
     make_backplanes(
         eclipse=10982,
         band="NUV",
-        depth=1,
+        depth=.25,
         leg=0,
         threads=4,
         burst=True,
         # should be root path for eclipse directories where you've written
         # your photonlists; will also write files
         # there. recall photonlists must be written with extended metadata
-        local="/home/bekah/gphoton_working/test_data",
+        local="/home/bekah/gPhoton2/test_data",
         # "xy" or "dose"
         kind="dose",
         # detector radius cutoff -- only matters for dosemaps. pop up to ~750
@@ -25,6 +25,6 @@ if __name__ == "__main__":
         # dosemap xylist
         threshold=.45,
         star_size=2,
-        snippet=None
+        snippet=None,
     )
 

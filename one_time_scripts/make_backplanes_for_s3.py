@@ -1,8 +1,12 @@
 from pyarrow import parquet
 import pandas as pd
-import subprocess
+import sys
+import os
+import shutil
 from glcat.backplanes import make_backplanes
-from gPhoton2.pipeline import execute_pipeline
+from gPhoton.pipeline import execute_pipeline
+sys.path.append('/home/ubuntu/gPhoton2')
+
 
 metadata = parquet.read_table('/gPhoton2/aspect/metadata.parquet',
                               columns=['eclipse', 'legs']).to_pandas()
@@ -10,13 +14,14 @@ band = "NUV"
 
 fails = []
 
-for eclipse in metadata['eclipse']:
+for eclipse in metadata['eclipse'][:10]:
     # how many legs does this eclipse have
     legs = metadata[metadata['eclipse'] == eclipse]['legs'].item()
 
     # gphoton run to produce extended photonlist
     # modified aspect table must be called "aspect2" and be in the aspect folder of gPhoton2
-    execute_pipeline(
+    try:
+         execute_pipeline(
             eclipse,
             band,
             depth=120,
@@ -46,34 +51,23 @@ for eclipse in metadata['eclipse']:
             # aspect file, don't need to set unless need to use alt
             # file, 'aspect2.parquet'
             aspect="aspect2"
-        )
+            )
+    except KeyboardInterrupt:
+         raise
+    except Exception as ex:
+        print("something didn't work :( ")
+        with open("failed_gphoton_eclipses.csv", "a+") as stream:
+            stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
     # if photonlist is produced, try to make backplanes
     try:
-        if legs > 0:
-            for leg in range(legs):
-                make_backplanes(
-                        eclipse=eclipse,
-                        band=band,
-                        depth=1,
-                        leg=leg,
-                        threads=4,
-                        burst=True,
-                        local="/gPhoton2",
-                        kind="dose",
-                        radius=600,
-                        write={'array': True, 'xylist': False},
-                        inline=True,
-                        threshold=.45,
-                        star_size=2,
-                        snippet=None
-                )
-        else:
+        legs = [0] if legs == 0 else tuple(range(legs))
+        for leg in legs:
             make_backplanes(
                 eclipse=eclipse,
                 band=band,
                 depth=1,
-                leg=0,
+                leg=leg,
                 threads=4,
                 burst=True,
                 local="/gPhoton2",
@@ -85,18 +79,22 @@ for eclipse in metadata['eclipse']:
                 star_size=2,
                 snippet=None
                 )
-    except:
+    except KeyboardInterrupt:
+         raise
+    except Exception as ex:
         print("something didn't work :( ")
-        fails = fails.append(eclipse)
+        with open("failed_backplane_eclipses.csv", "a+") as stream:
+            stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
     pad_eclipse = str(eclipse).zfill(5)
+    b = "n" if band == "NUV" else "f"
+    #delete raw6
+    os.remove(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}/e{pad_eclipse}-{b}d-raw6.fits.gz')
     # move folder of eclipse stuff (backplanes, extended photonlist) to s3
-    move = f"mv e{pad_eclipse} /mnt/s3/backplanes/"
-    subprocess.call(move, shell=True)
+    dest = shutil.move(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', '/mnt/s3/')
+    print(f"moved folder of {pad_eclipse} to {dest}")
 
-# save failures
-fails_df = pd.DataFrame(fails)
-fails_df.to_csv("failed_backplane_eclipses.csv")
+print("done :)")
 
 
 
