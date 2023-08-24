@@ -4,8 +4,8 @@ import sys
 import os
 import shutil
 from backplanes import make_backplanes
-from pipeline import execute_pipeline
 sys.path.append('/home/ubuntu/gPhoton2')
+from gPhoton.pipeline import execute_pipeline
 
 
 metadata = parquet.read_table('/home/ubuntu/gPhoton2/gPhoton/aspect/metadata.parquet',
