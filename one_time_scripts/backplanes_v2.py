@@ -1,8 +1,7 @@
 from pyarrow import parquet
-import pandas as pd
 import sys
-import os
 import shutil
+import subprocess
 from backplanes import make_backplanes
 sys.path.append('/home/ubuntu/gPhoton2')
 from gPhoton.pipeline import execute_pipeline
@@ -21,39 +20,17 @@ for eclipse in metadata['eclipse'][:10]:
     # gphoton run to produce extended photonlist
     # modified aspect table must be called "aspect2" and be in the aspect folder of gPhoton2
     try:
-         execute_pipeline(
-            eclipse,
-            band,
-            depth=120,
-            # integer; None to deactivate (default None)
-            threads=4,
-            # where to both write output data and look for input data
-            local_root="/home/ubuntu/gPhoton2/test_data",
-            # auxiliary remote location for input data
-            # remote_root="/mnt/s3",
-            recreate=True,
-            # list of floats; relevant only to lightcurve / photometry portion
-            aperture_sizes=[12.8],
-            # actually write image/movie products? otherwise hold in memory but
-            # discard (possibly after performing photometry).
-            write={"movie": False, "image": False},
-            coregister_lightcurves=False,
-            # photonpipe, moviemaker, None (default None)
-            stop_after='photonpipe',
-            photometry_only=False,
-            # None, "gzip", "rice"
-            compression="rice",
-            # use array sparsification on movie frames?
-            lil=True,
-            # write movie frames as separate files
-            burst=False,
-            extended_photonlist=True,
-            # aspect file, don't need to set unless need to use alt
-            # file, 'aspect2.parquet'
-            aspect="aspect2"
-            )
+        local_root = "/home/ubuntu/gPhoton2/test_data",
+        cmd = f"python pipeline_cli.py {eclipse} {band}" \
+               f" --threads=4 --local_root={local_root} --stop_after='photonpipe'" \
+               f" --compression=rice --write={{'movie':False,'image':False}} --extended_photonlist=True --aspect='aspect2' "
+        subprocess.run(cmd, shell=True, timeout=300)
     except KeyboardInterrupt:
         raise
+    except subprocess.TimeoutExpired as e:
+        print(f"something didn't work :( for {eclipse} ")
+        with open("failed_gphoton_eclipses.csv", "a+") as stream:
+            stream.write(f"{eclipse},{str(e).replace(',', '')}\n")
     except Exception as ex:
         print(f"something didn't work :( for {eclipse} ")
         with open("failed_gphoton_eclipses.csv", "a+") as stream:
@@ -89,9 +66,6 @@ for eclipse in metadata['eclipse'][:10]:
     pad_eclipse = str(eclipse).zfill(5)
     b = "n" if band == "NUV" else "f"
 
-    #delete raw6
-    #os.remove(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}/e{pad_eclipse}-{b}d-raw6.fits.gz')
-
     # move folder of eclipse stuff (backplanes, extended photonlist) to s3
     try:
         dest = shutil.move(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', '/mnt/s3/')
@@ -104,8 +78,3 @@ for eclipse in metadata['eclipse'][:10]:
             stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
 print("done :)")
-
-
-
-
-
