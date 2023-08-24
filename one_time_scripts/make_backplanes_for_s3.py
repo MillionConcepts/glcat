@@ -3,12 +3,12 @@ import pandas as pd
 import sys
 import os
 import shutil
-from glcat.backplanes import make_backplanes
-from gPhoton.pipeline import execute_pipeline
+from backplanes import make_backplanes
+from pipeline import execute_pipeline
 sys.path.append('/home/ubuntu/gPhoton2')
 
 
-metadata = parquet.read_table('/gPhoton2/aspect/metadata.parquet',
+metadata = parquet.read_table('/home/ubuntu/gPhoton2/gPhoton/aspect/metadata.parquet',
                               columns=['eclipse', 'legs']).to_pandas()
 band = "NUV"
 
@@ -28,7 +28,7 @@ for eclipse in metadata['eclipse'][:10]:
             # integer; None to deactivate (default None)
             threads=4,
             # where to both write output data and look for input data
-            local_root="test_data",
+            local_root="/home/ubuntu/gPhoton2/test_data",
             # auxiliary remote location for input data
             # remote_root="/mnt/s3",
             recreate=True,
@@ -53,9 +53,13 @@ for eclipse in metadata['eclipse'][:10]:
             aspect="aspect2"
             )
     except KeyboardInterrupt:
-         raise
+        #raise
+        print(f"keyboard interrupt :( for {eclipse} ")
+        with open("failed_gphoton_eclipses.csv", "a+") as stream:
+            stream.write(f"{eclipse},keyboard\n")
+
     except Exception as ex:
-        print("something didn't work :( ")
+        print(f"something didn't work :( for {eclipse} ")
         with open("failed_gphoton_eclipses.csv", "a+") as stream:
             stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
@@ -70,7 +74,7 @@ for eclipse in metadata['eclipse'][:10]:
                 leg=leg,
                 threads=4,
                 burst=True,
-                local="/gPhoton2",
+                local="/home/ubuntu/gPhoton2/test_data",
                 kind="dose",
                 radius=600,
                 write={'array': True, 'xylist': False},
@@ -80,19 +84,34 @@ for eclipse in metadata['eclipse'][:10]:
                 snippet=None
                 )
     except KeyboardInterrupt:
-         raise
+         #raise
+        print(f"keyboard interrupt :( for {eclipse} ")
+        with open("failed_backplane_eclipses.csv", "a+") as stream:
+            stream.write(f"{eclipse},keyboard\n")
     except Exception as ex:
-        print("something didn't work :( ")
+        print(f"something didn't work :( for {eclipse} ")
         with open("failed_backplane_eclipses.csv", "a+") as stream:
             stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
     pad_eclipse = str(eclipse).zfill(5)
     b = "n" if band == "NUV" else "f"
+
     #delete raw6
-    os.remove(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}/e{pad_eclipse}-{b}d-raw6.fits.gz')
+    #os.remove(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}/e{pad_eclipse}-{b}d-raw6.fits.gz')
+
     # move folder of eclipse stuff (backplanes, extended photonlist) to s3
-    dest = shutil.move(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', '/mnt/s3/')
-    print(f"moved folder of {pad_eclipse} to {dest}")
+    try:
+        dest = shutil.move(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', '/mnt/s3/')
+        print(f"moved folder of {pad_eclipse} to {dest}")
+    except KeyboardInterrupt:
+        #raise
+        print(f"keyboard interrupt :( for {eclipse} ")
+        with open("failed_transfer_eclipses.csv", "a+") as stream:
+            stream.write(f"{eclipse},keyboard\n")
+    except Exception as ex:
+        print("something didn't work :( ")
+        with open("failed_transfer_eclipses.csv", "a+") as stream:
+            stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
 print("done :)")
 
