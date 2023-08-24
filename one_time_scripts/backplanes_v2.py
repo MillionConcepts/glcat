@@ -24,7 +24,7 @@ for eclipse in metadata['eclipse'][:10]:
         cmd = f"python pipeline_cli.py {eclipse} {band}" \
                f" --threads=4 --local_root={local_root} --stop_after='photonpipe'" \
                f" --compression=rice --write={{'movie':False,'image':False}} --extended_photonlist=True --aspect='aspect2' "
-        subprocess.run(cmd, shell=True, timeout=300)
+        subprocess.run(['conda activate gphoton2',cmd], shell=False, timeout=300)
     except KeyboardInterrupt:
         raise
     except subprocess.TimeoutExpired as e:
@@ -33,6 +33,7 @@ for eclipse in metadata['eclipse'][:10]:
             stream.write(f"{eclipse},{str(e).replace(',', '')}\n")
     except Exception as ex:
         print(f"something didn't work :( for {eclipse} ")
+        print(ex)
         with open("failed_gphoton_eclipses.csv", "a+") as stream:
             stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
