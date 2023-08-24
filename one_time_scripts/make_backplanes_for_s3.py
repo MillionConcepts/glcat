@@ -94,7 +94,7 @@ for eclipse in metadata['eclipse'][:10]:
 
     # move folder of eclipse stuff (backplanes, extended photonlist) to s3
     try:
-        dest = shutil.move(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', '/mnt/s3/')
+        dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', '/mnt/s3/')
         print(f"moved folder of {pad_eclipse} to {dest}")
     except KeyboardInterrupt:
         raise
@@ -102,9 +102,10 @@ for eclipse in metadata['eclipse'][:10]:
         print(f"something didn't work :( for {eclipse} ")
         with open("failed_transfer_eclipses.csv", "a+") as stream:
             stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
-        if os.path.exists(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}'):
-            print("deleting failed folder from ec2")
-            shutil.rmtree(f'home/ubuntu/gPhoton2/test_data/e{pad_eclipse}')
+
+    if os.path.exists(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}'):
+        print("deleting failed folder from ec2")
+        shutil.rmtree(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}')
 
 print("done :)")
 
