@@ -2,7 +2,7 @@
 # aspect corrected frames per eclipse
 # in the ideal pipeline, the scst files are a giant parquet table and
 # the backplanes are pre-produced
-
+import sys
 from slew_aspect_correction.main import slew_frame_pipeline
 from filenames import get_slew_frame_files, get_normal_frame_files, get_main_files
 from astropy.io import fits
@@ -11,17 +11,96 @@ from aspect_correction.xylist_runs import get_stars
 from aspect_correction.combine_wcs import execute_combine
 from compare_aspect.main import write_aspect2
 from aspect_correction.xylist_runs import run_astrometry_net
+from tools.retrieve import get_eclipse_data
+from backplanes import make_backplanes, dosemaps_just_for_timestamps
+sys.path.append('/home/bekah/gPhoton2')
+from gPhoton.pipeline import execute_pipeline
+from gPhoton.reference import PipeContext
 
 
 def aspect_pipe(eclipse, band):
     """ handles solving aspect for all eclipses. """
-    # get tables of normal frames and slew frames from big scst file
-    normal_frames, slew_frames = get_frames(eclipse, band)
+    # how many legs does this eclipse have
+    #TODO: load just by eclipse
+    meta = parquet.read_table('/home/bekah/gPhoton2/gPhoton/aspect/metadata.parquet',
+                              columns=['eclipse', 'legs']).to_pandas()
 
     # make file names using known frames
     file_names = get_main_files(eclipse, band, normal_frames, slew_frames)
-    # download backplanes from aws (?)
-    #backplanes = get_backplanes()
+    # are the files pre-produced on AWS S3 bucket backplane_test?
+    try:
+        #TODO: check if querying / get command for S3 costs money if no file there,
+        #otherwise we don't want to hit it with every single eclipse
+        get_eclipse_data(eclipse)
+    except:
+        print("Eclipse not in S3 bucket. Running gPhoton and producing backplanes locally.")
+        # gotta make our own eclipse files, including backplanes
+        try:
+            execute_pipeline(
+                eclipse,
+                band,
+                depth=120,
+                # integer; None to deactivate (default None)
+                threads=4,
+                # where to both write output data and look for input data
+                local_root="/home/bekah/gPhoton2/test_data",
+                # auxiliary remote location for input data
+                # remote_root="/mnt/s3",
+                recreate=True,
+                # list of floats; relevant only to lightcurve / photometry portion
+                aperture_sizes=[12.8],
+                # actually write image/movie products? otherwise hold in memory but
+                # discard (possibly after performing photometry).
+                write={"movie": False, "image": False},
+                coregister_lightcurves=False,
+                # photonpipe, moviemaker, None (default None)
+                stop_after='photonpipe',
+                photometry_only=False,
+                # None, "gzip", "rice"
+                compression="rice",
+                # use array sparsification on movie frames?
+                lil=True,
+                # write movie frames as separate files
+                burst=False,
+                extended_photonlist=True,
+                # aspect file, don't need to set unless need to use alt
+                # file, 'aspect2.parquet'
+                aspect="aspect2"
+            )
+        except:
+            print(f"something didn't work :( for {eclipse} ")
+            return
+        # if photonlist is produced, try to make backplanes
+        try:
+            legs = metadata[metadata['eclipse'] == eclipse]['legs'].item()
+            legs = [0] if legs == 0 else tuple(range(legs))
+            for leg in legs:
+                make_backplanes(
+                    eclipse=eclipse,
+                    band=band,
+                    depth=1,
+                    leg=leg,
+                    threads=4,
+                    burst=True,
+                    local="/home/ubuntu/gPhoton2/test_data",
+                    kind="dose",
+                    radius=600,
+                    write={'array': True, 'xylist': False},
+                    inline=True,
+                    threshold=.45,
+                    star_size=2,
+                    snippet=None
+                )
+        except:
+            print(f"something didn't work :( for {eclipse} ")
+            return
+    print("Checking for expected backplane inventory.")
+        frame_catalog = check_backplanes(eclipse, file_names)
+    # frame_catalog says which backplanes may need to be produced, could add another point here to
+    # produce those additional backplanes
+
+    # get tables of normal frames and slew frames from big scst file
+    normal_frames, slew_frames = get_frames(eclipse, band)
 
     # loop through every aspect frame
     # this is where it could be easily parallelized
@@ -74,6 +153,36 @@ def get_frames(eclipse, band):
                   filters=[('eclipse', '=', eclipse), ('slew', '=', True)]).to_pandas()
 
     return normal_frames, slew_frames
+
+
+def check_backplanes(eclipse, file_names, ctx):
+    """check for backplanes that should be in the eclipse folder based on
+    extended aspect file"""
+    import os
+    ctx = PipeContext(
+        eclipse,
+        band,
+        depth,
+        "gzip",
+        local,
+        leg=leg,
+        threads=threads,
+        burst=burst,
+        write=write,
+        start_time=1000,
+        stop_after=stop_after,
+        snippet=snippet
+    )
+    time_stamps = dosemaps_just_for_timestamps(ctx, 400)
+    # are all filenames in eclipse folder
+    #TODO: put file name in file name function and change here
+    files = os.listdir(f'home/bekah/gPhoton2/test_data/{eclipse}')
+
+    # how to compare files? make a list of expected files and merge with actual files?
+    # this approach is probably quicker than iterating through all of them
+    frame_catalog =
+
+    return frame_catalog
 
 
 
