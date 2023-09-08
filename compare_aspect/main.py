@@ -3,7 +3,6 @@ import subprocess
 import os
 import sys
 from typing import Optional
-import aspect_correction as asp
 from backplanes import make_backplanes
 from compare_aspect.psf_fitting import run_psf_compare
 from compare_aspect.plots import make_plots
@@ -69,7 +68,7 @@ def run_compare(
                 return
         # produce new aspect solution
         print("running aspect refiner")
-        asp.main.execute_refiner(eclipse, 1, exptime, 'xylist', dose=True, crop=True)
+        retired.main.execute_refiner(eclipse, 1, exptime, 'xylist', dose=True, crop=True)
         # write new aspect solution to aspect2.parquet file
         print("writing aspect to aspect parquet 2")
         write_aspect2(eclipse, file_names)

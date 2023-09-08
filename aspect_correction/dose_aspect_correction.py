@@ -1,41 +1,8 @@
-
 """functions to run astrometry.net with xylists of stars"""
 
 from astropy.io import fits
 import subprocess
-from util import zero_flag_and_edge, get_ra_dec, make_refined_aspect_table, crop_xylist
-
-
-def run_xylist(eclipse, expt, num_frames, file_names, dose, crop):
-    """Handler for running astrometry.net with xylists, our main way to run it.
-    This means it only intakes picture info, as well as a list of star x, y
-    positions."""
-    if not dose:
-        print("Only run 'xylist' on dosemap data because they have pre-made xylists.")
-        return
-    for i in range(num_frames):
-        print(f"On frame {i}")
-        table_name = file_names["xylist"][i]
-        ra, dec = get_ra_dec(eclipse)
-        if table_name is None:
-            print(f"No xylist written for this frame {i}.")
-        else:
-            #TODO: pull from wcs file instead of hard-coding?
-            image_width = 3200 #3200
-            image_height = 3200 # 3200 MIS
-            crpix_x = 1600 # 1600 MIS
-            crpix_y = 1600 # 1600
-            if crop:
-                image_width, image_height = crop_xylist(file_names["xylist"][i], file_names["xylist_cropped"][i],
-                                                        image_width, image_height)
-                print(f"New image width and height are: {image_width}, {image_height}")
-                run_astrometry_net(eclipse, i, expt, file_names, image_width, image_height, ra,
-                                   dec, crpix_x, crpix_y, xylist_type="xylist_cropped")
-            else:
-                run_astrometry_net(eclipse, i, expt, file_names, image_width, image_height, ra,
-                                   dec, crpix_x, crpix_y, xylist_type="xylist")
-    asp_df = make_refined_aspect_table(file_names, crop)
-    return asp_df
+from util import zero_flag_and_edge, get_aspect_from_wcsinfo
 
 
 def run_xylist_on_image(eclipse, expt, num_frames, file_names, dose, **opt):

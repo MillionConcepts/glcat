@@ -1,4 +1,4 @@
-from main import execute_refiner
+from retired.main import execute_refiner
 
 if __name__ == "__main__":
     execute_refiner(

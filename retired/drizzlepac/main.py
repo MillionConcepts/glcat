@@ -1,12 +1,9 @@
 from astropy.io import fits
 from astropy.wcs import wcs
 import drizzle
-import pandas as pd
 from matplotlib import pyplot as plt
 import numpy as np
-from drizzlepac import tweakreg
 from astropy.io import ascii
-from drizzlepac import astrodrizzle
 
 
 def fix_wcs_per_frame():
@@ -69,7 +66,7 @@ def drizzle_demo_one(reference, outfile, infiles):
 
 
 def run_tweak_reg(infiles):
-    from drizzlepac import tweakreg
+    from retired.drizzlepac import tweakreg
     tweakreg.TweakReg(infiles,
                       use_custom_catalogs=True,
                       threshold=0.75,
@@ -91,7 +88,7 @@ def run_tweak_reg(infiles):
 
 def run_drizzle(infiles):
     # run astrodrizzle with a list of images
-    from drizzlepac import astrodrizzle
+    from retired.drizzlepac import astrodrizzle
     astrodrizzle.AstroDrizzle(
         input=('/home/bekah/gphoton_working/test_data/e09869/files/e09869-nd-t0001-b00-f0001-g_dose_WCS.fits',
         '/home/bekah/gphoton_working/test_data/e09869/files/e09869-nd-t0001-b00-f0002-g_dose_WCS.fits',
