@@ -5,6 +5,12 @@ import numpy as np
 import pandas as pd
 
 
+
+def refine_slew_frame(frame_series):
+    """ refine a slew frame, includes production of 10 .1 s backplanes """
+    return
+
+
 def slew_frame_pipeline(eclipse, frame_info):
     """ pipeline for a 1s slew frame. calls for 10 (.1 s) backplane images of the frame,
     uses a filtered 1s image to determine direction of movement via edge detection,

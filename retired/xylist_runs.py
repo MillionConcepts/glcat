@@ -5,6 +5,47 @@ from astropy.io import fits
 import subprocess
 from util import zero_flag_and_edge, get_ra_dec, make_refined_aspect_table, crop_xylist
 
+def run_xylist_on_image(eclipse, expt, num_frames, file_names, dose, **opt):
+    """Handler for running astrometry.net with xylists, our main way to run it.
+    This means it only intakes picture info, as well as a list of star x, y
+    positions."""
+    for i in range(num_frames):
+        print(f"opening frame {i} fits file")
+        frame_path = file_names["frame_path"][i]
+        movie = fits.open(frame_path)
+        ra, dec = get_ra_dec(eclipse)
+        if not dose:
+            print(f"masking flag and edge in frame {i}")
+            masked_cnt = zero_flag_and_edge(movie[1].data[0],
+                                            movie[2].data[0],
+                                            movie[3].data[0])
+            print(f"extracting sources from frame {i}")
+            table_name = get_stars(masked_cnt, i, file_names, **opt)
+            if table_name is None:
+                print(f"No stars found in this frame {i}.")
+            else:
+                image_width = movie[1].header['NAXIS1']
+                image_height = movie[1].header['NAXIS2']
+                crpix_x = movie[1].header['CRPIX1']   # RA -- TAN (was -1)
+                crpix_y = movie[1].header['CRPIX2']  # DEC -- TAN (was -1)
+                run_astrometry_net(eclipse, i, expt, table_name, image_width,
+                                   image_height, ra, dec, crpix_x, crpix_y)
+        if dose:
+            print(f"extracting sources from frame {i}")
+            table_name = get_stars(movie[0].data, i, file_names, **opt)
+            if table_name is None:
+                print(f"No stars found in this frame {i}.")
+            if table_name is not None:
+                image_width = 3200
+                image_height = 3200
+                crpix_x = 1600  # RA -- TAN
+                crpix_y = 1600  # DEC -- TAN
+                run_astrometry_net(eclipse, i, expt, table_name, image_width,
+                                   image_height, ra, dec, crpix_x, crpix_y)
+    asp_df = make_refined_aspect_table(file_names)
+    return asp_df
+
+
 
 def run_xylist_on_image(eclipse, expt, num_frames, file_names, dose, **opt):
     """Handler for running astrometry.net with xylists, our main way to run it.
