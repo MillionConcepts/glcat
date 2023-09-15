@@ -4,7 +4,7 @@ if __name__ == "__main__":
     make_backplanes(
         eclipse=10982,
         band="NUV",
-        depth=.25,
+        depth=.1,
         leg=0,
         threads=4,
         burst=True,
