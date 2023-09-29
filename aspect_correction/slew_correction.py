@@ -2,13 +2,14 @@ import numpy as np
 import pandas as pd
 from astropy.io import fits
 from backplanes import make_backplanes
-from util import get_aspect_from_wcsinfo
-
+from aspect_correction.util import get_aspect_from_wcsinfo
+import os
 
 def refine_slew_frame(
         frame_series,
         eclipse_info,
-        aspect_root):
+        aspect_root,
+        next_frame):
     """ refine a slew frame. steps:
     1) filter 1s backplane w gaussian
     2) identify streaks in filtered image
@@ -26,15 +27,20 @@ def refine_slew_frame(
     if streaks is None:
         return None
     # need to make 10 .1 s backplanes of the frame
-    #TODO: check for backplane production
+    # TODO: check for backplane production
     make_shorter_backplanes(frame_series, eclipse_info, aspect_root)
-    # stack frames based on streaks
-    stack_frames(streaks, frame_series, slew_paths)
-    # get xylist and send to astrometry.net
-    h, w = get_xylist_for_stacked(slew_paths, frame_series)
-    astrometry_xylist_slew(frame_series, h, w)
-    aspect = get_aspect_from_wcsinfo(frame_series['wcs_path'])
-    return aspect
+    if check_for_short_backplanes(slew_paths["short_backplanes"]):
+        # get streak direction
+        # direction = get_stack_direction(frame_series, slew_paths)
+        # stack frames based on streaks
+        stack_frames(streaks, frame_series, slew_paths)
+        # get xylist and send to astrometry.net
+        h, w = get_xylist_for_stacked(slew_paths, frame_series)
+        astrometry_xylist_slew(frame_series, h, w)
+        aspect = get_aspect_from_wcsinfo(frame_series['wcs_path'])
+        return aspect
+    print("Short backplane creation failed for this frame.")
+    return
 
 
 def make_slew_paths(frame_series):
@@ -42,12 +48,14 @@ def make_slew_paths(frame_series):
     slew_paths = {}
     slew_paths["smooth_backplane"] = frame_series["aspect_output"] + \
                                      f"smooth_{frame_series['time_stamp']}.fits"
-    #TODO: edit timestamp of short backplanes
-    slew_paths["short_backplanes"] = [frame_series['backplane_path']\
-        .replace('f0001', 'f00001') for x in range(10)]
+    # TODO: edit timestamp of short backplanes
+    slew_paths["short_backplanes"] = [frame_series['backplane_path'] \
+                                          .replace('f0001', 'f00001') for x in range(10)]
     slew_paths["streaks"] = frame_series["aspect_output"] + "streaks.txt"
     slew_paths["stacked"] = frame_series["aspect_output"] + \
-                                     f"stacked_{frame_series['time_stamp']}.fits"
+                            f"stacked_{frame_series['time_stamp']}.fits"
+    slew_paths["stacked_opposite"] = frame_series["aspect_output"] + \
+                                     f"stacked_op_{frame_series['time_stamp']}.fits"
     return slew_paths
 
 
@@ -68,9 +76,15 @@ def make_shorter_backplanes(frame_series, eclipse_info, aspect_root):
         inline=True,
         threshold=.75,
         star_size=2,
-        snippet=(eclipse_info['time'], eclipse_info['time']+1)
+        snippet=(eclipse_info['time'], eclipse_info['time'] + 1)
     )
     return
+
+
+def check_for_short_backplanes(short_backplanes):
+    """ check that short backplanes were created
+    before trying to stack """
+    return all(list(map(os.path.isfile, short_backplanes)))
 
 
 def filter_image(frame_series, slew_paths):
@@ -91,11 +105,11 @@ def run_astride(frame_series, slew_paths):
     from astride import Streak
     # Read a fits image and create a Streak instance.
     streak = Streak(
-                slew_paths["smooth_backplane"],
-                contour_threshold=4,
-                min_points=1800,
-                radius_dev_cut=0.3,
-                shape_cut=0.1)
+        slew_paths["smooth_backplane"],
+        contour_threshold=4,
+        min_points=1800,
+        radius_dev_cut=0.3,
+        shape_cut=0.1)
     # Detect streaks.
     streak.detect()
     # Write outputs and plot figures.
@@ -114,15 +128,15 @@ def run_astride(frame_series, slew_paths):
         y_vals.append(s['y'])
     # these are for getting the outlines of streaks, which we don't really need
     # except for plotting
-    #np.save('xvals.npy', np.array(x_vals, dtype=object), allow_pickle=True)
-    #np.save('yvals.npy', np.array(y_vals, dtype=object), allow_pickle=True)
+    # np.save('xvals.npy', np.array(x_vals, dtype=object), allow_pickle=True)
+    # np.save('yvals.npy', np.array(y_vals, dtype=object), allow_pickle=True)
     streaks = get_streaks(slew_paths)
     return streaks
 
 
 def get_streaks(slew_paths):
     """ get streaks from ASTRIDE results and calculate parameters """
-    #TODO: change expt
+    # TODO: change expt
     expt = 2
     streaks = pd.read_csv(slew_paths['streaks'], delim_whitespace=True)
     # calculate offsets
@@ -146,29 +160,49 @@ def get_streaks(slew_paths):
 
 
 def stack_frames(streaks, frame_series, slew_paths):
-    """looks at ASTRIDE results and uses streak length / direction to
-    stack .1s frames into a 1s image """
-    layers = 10 # how many .1 s frames we add together, don't have to hard code here
-    hdul = fits.open(frame_series['backplane_path'])
-    img1 = hdul[0].data
-    new_shape = ((layers - 1) * streaks['y_offset'] + img1.shape[0],
-                 (layers - 1) * streaks['x_offset'] + img1.shape[1])
+    """ stack frames in two directions along linear streak """
+    # num frames
+    num_frames = 10
+    # dimensions of first frame
+    first_frame_hdul = fits.open(frame_series['backplane_path'])
+    first_frame = first_frame_hdul[0].data
+    # new image size is the offset between frames * the number of frames being added
+    # plus the og image size
+    # num # frames is 10 usually (.1s increments for 1s)
+    x_dim = ((num_frames - 1) * streaks['x_offset'] + first_frame.shape[0])
+    y_dim = ((num_frames - 1) * streaks['y_offset'] + first_frame.shape[1])
 
-    stacked = np.zeros(new_shape)  # , dtype=np.float)
-    stacked2 = np.zeros(new_shape)  # , dtype=np.float)
-    # adding image layers together
-    #TODO: edit for correct backplane names in loop for short ones
-    for layer in range(layers):
-        print("adding image layers together")
-        dose_ais = fits.open(slew_paths['short_backplanes'][layer])
-        img1 = dose_ais[0].data  # *layer # for tagging pixels as being from a layer
-        layer_op = (layers - 1) - layer
-        stacked[layer_op * streaks['y_offset']:layer_op * streaks['y_offset'] + img1.shape[0],
-        layer_op * streaks['x_offset']:layer_op * streaks['x_offset'] + img1.shape[1]] += img1
+    # empty image of stacked dimensions
+    stacked = np.zeros((x_dim, y_dim))
+    stacked_opposite = np.zeros((x_dim, y_dim))
+
+    # iterate through adding 10 .1 s frames
+    for frame in range(num_frames):
+        # get frame image
+        frame_hdul = fits.open(slew_paths['short_backplanes'][frame])
+        frame_image = frame_hdul[0].data
+        # countdown layers
+        inverse_layer = (num_frames - 1) - frame
+        # add frame to section of stacked image that corresponds with offset
+        stacked[inverse_layer * streaks['y_offset']:inverse_layer * streaks['y_offset'] +
+                                                    frame_image.shape[0],
+        inverse_layer * streaks['x_offset']:inverse_layer * streaks['x_offset'] +
+                                            frame_image.shape[1]] += frame_image
+        # add frame to section of stacked image that corresponds with offset in opposite dir
+        stacked_opposite[frame * streaks['y_offset']:frame * streaks['y_offset'] +
+                                                     frame_image.shape[0],
+        frame * streaks['x_offset']:frame * streaks['x_offset'] +
+                                    frame_image.shape[1]] += frame_image
+    print("Finished stacking.")
     # saving image to fits
     hdu = fits.PrimaryHDU(stacked)
     hdul = fits.HDUList([hdu])
     hdul.writeto(slew_paths["stacked"], overwrite=True)
+    hdu2 = fits.PrimaryHDU(stacked_opposite)
+    hdul2 = fits.HDUList([hdu2])
+    hdul2.writeto(slew_paths["stacked_opposite"], overwrite=True)
+    print("Wrote two stacked images.")
+
     return
 
 
@@ -181,7 +215,7 @@ def get_xylist_for_stacked(slew_paths, frame_series):
     daofind = DAOStarFinder(fwhm=4, threshold=1, sharplo=0.00)
     star_list = daofind(sim)
     tbl = star_list.to_pandas()
-    #TODO: is output list sorted by flux? check
+    # TODO: is output list sorted by flux? check
     star_list = tbl.sort_values(by="flux", ascending=False)
     colx = fits.Column(name='X', format='E', array=star_list['xcentroid'])
     coly = fits.Column(name='Y', format='E', array=star_list['ycentroid'])
@@ -196,10 +230,20 @@ def get_xylist_for_stacked(slew_paths, frame_series):
 def astrometry_xylist_slew(frame_series, h, w):
     """ run astrometry on a slew frame """
     import subprocess
-    cmd = f"solve-field --overwrite --dir { frame_series['aspect_output']} " \
+    cmd = f"solve-field --overwrite --dir {frame_series['aspect_output']} " \
           f"-w {w} -e {h} --scale-units arcsecperpix --scale-low 1.0 --scale-high 1.5 " \
-          f"-3 {frame_series['ra']} -4 { frame_series['dec']} " \
+          f"-3 {frame_series['ra']} -4 {frame_series['dec']} " \
           f"--radius 5 {frame_series['xylist_path']}"
     subprocess.call(cmd, shell=True)
     print("Astrometry.net subprocess called.")
     return
+
+
+# **************** not used rn **********************************************************
+
+
+def get_stack_direction(frame_series, slew_paths):
+    """ get direction of slew, so we know which direction to stack short frames.
+     uses og aspect, although you could use new if available """
+    dir = frame_series['time_stamp'] + 1
+    return dir

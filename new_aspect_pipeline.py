@@ -1,12 +1,13 @@
 import sys
+sys.path.insert(0, '/home/bekah/gPhoton2')
 from gPhoton.types import Pathlike, GalexBand
 from typing import Optional, Literal
 from pyarrow import parquet
 import pandas as pd
 from aspect_correction.dose_aspect_correction import refine_normal_frame
 from aspect_correction.slew_correction import refine_slew_frame
-sys.path.insert(0, '/home/bekah/gPhoton2')
-
+from gPhoton.reference import PipeContext
+from backplanes import dosemaps_just_for_timestamps
 # aspect root = '/home/bekah/gPhoton2'/test_data'
 # gphoton root = '/home/bekah/gPhoton2'
 
@@ -46,6 +47,7 @@ def refine_eclipse(
     # with paths for each backplane
     frame_list = get_frame_list(eclipse, metadata_paths)
     modified_frame_list = pd.DataFrame()
+
     if eclipse_info['actual_legs'] == 0:
         modified_frame_list = get_backplane_filenames(
             eclipse_info,
@@ -60,28 +62,36 @@ def refine_eclipse(
             leg,
             aspect_root)
         modified_frame_list = pd.concat([modified_frame_list, files], axis=0)
-
-    #TODO: create aspect folder from modified_frame_list in aspect root directory
-
+    modified_frame_list.to_csv("test.csv")
     for frame in range(len(modified_frame_list)):
+        print(f"Running refine on frame {frame}")
+        #get next row info
+        try:
+            next_frame = modified_frame_list.iloc[frame+1]
+        except IndexError:
+            next_frame = modified_frame_list.iloc[frame-1]
         aspect = refine_frame(
             modified_frame_list.iloc[frame],
             eclipse_info,
-            paths,
             aspect_root,
-            gphoton_root)
+            next_frame)
         # aspect is tuple of ra, dec, roll, time
         3  # TODO: do I want the new aspect to go in the old mod_frame_list or it's own file?
         # modified_frame_list.iloc
     return
 
 
-def refine_frame(frame_series, eclipse_info, aspect_root):
+def refine_frame(frame_series, eclipse_info, aspect_root, next_frame):
     """refines a frame based on info in frame series (ex: normal or slew frame).
     important cols include: time, flags_x,ptag,hvnom_nuv,hvnom_fuv,ra_acs,
     dec_acs, roll_acs,frame_type,backplane_path,time_stamp,leg """
     if frame_series['frame_type'] == "slew":
-        aspect = refine_slew_frame(frame_series, eclipse_info, aspect_root)
+        aspect = refine_slew_frame(
+            frame_series,
+            eclipse_info,
+            aspect_root,
+            next_frame)
+
     elif frame_series['frame_type'] == "ref":
         aspect = refine_normal_frame(frame_series)
     return aspect
@@ -167,6 +177,32 @@ def get_frame_list(
     # (only works if it's one entry)
     if new_aspect.iloc[-1].time - new_aspect.iloc[-2].time > 10:
         new_aspect.drop(new_aspect.tail(1).index, inplace=True)
+
+    #TODO: remove
+    new_aspect.to_csv("new_aspect.csv")
+    return new_aspect
+
+
+def get_frame_list_mod(
+        eclipse: int,
+        metadata_paths: dict):
+    """ join extended and og aspect parquet per eclipse to get unrefined
+    'slew' frames. MODIFIED VERSION to use parts of backplane code """
+    from pyarrow import parquet
+    og_aspect = parquet.read_table(metadata_paths['og_aspect'],
+                                   filters=[('eclipse', '==', eclipse)]).to_pandas()
+    og_aspect['original'] = 'ref'
+    new_aspect = parquet.read_table(metadata_paths['expanded_aspect'],
+                                    filters=[('eclipse', '==', eclipse)]).to_pandas()
+    new_aspect = new_aspect.rename(columns={"pktime": "time"})
+    new_aspect['original'] = 'slew'
+    new_aspect = new_aspect.merge(og_aspect, on="time", how="outer")
+    new_aspect['original_y'].fillna('slew', inplace=True)
+    new_aspect = new_aspect.rename(columns={"original_y": "frame_type"})
+    # get rid of weird distant time stamp at end of file sometimes
+    # (only works if it's one entry)
+    if new_aspect.iloc[-1].time - new_aspect.iloc[-2].time > 10:
+        new_aspect.drop(new_aspect.tail(1).index, inplace=True)
     return new_aspect
 
 
@@ -184,7 +220,15 @@ def get_backplane_filenames(
     # select frames that make up a leg
     t_f = phot['t'][0].as_py()  # first timestamp of leg from photonlist
     t_l = phot['t'][-1].as_py()  # last timestamp of leg from photonlist
+
+    # rounding to have file names match backplane names (not sure why
+    # but timestamps are less sig figs in the aspect table)
+    t_f = round(t_f, 3)
+    t_l = round(t_l, 3)
+    frame_list = frame_list.round({'time': 3})
+
     leg_frames = frame_list.loc[(frame_list['time'] >= t_f) & (frame_list['time'] <= t_l)].copy()
+
     # backplanes name formatting fNNNNdd_tNNNNdd
     # this is probably an overly complex way to do the naming but ... it works
     leg_frames['backplane_path'] = paths['movie'].replace('.fits.gz', f'_dose.fits') \
@@ -206,7 +250,75 @@ def get_backplane_filenames(
     # wcs path
     leg_frames['wcs_path'] = leg_frames['aspect_output'] + "/l" + leg_frames['leg'].astype(str)\
                             + "ts" + (leg_frames['time_stamp'].astype(str)) + ".wcs"
-
+   # print(leg_frames)
     return leg_frames
+
+
+def get_backplane_filenames_mod(
+        eclipse_info: dict,
+        frame_list,
+        paths: dict,
+        leg: int,
+        aspect_root: str):
+    """ produce df of backplane filenames + other relevant names that are
+     frame specific (backplane, xylist, wcs etc) """
+    eclipse = eclipse_info["eclipse"]
+    band = eclipse_info["band"]
+    depth = 1
+    leg = leg
+    threads = 4
+    burst = True
+    local = "/media/bekah/BekahA/glcat"
+    kind = "dose"
+    radius = 600
+    write = {'array': True, 'xylist': False}
+    inline = True
+    threshold = .45
+    star_size = 2
+    write = {} if write is None else dict(write)
+    ctx = PipeContext(
+        eclipse,
+        band,
+        depth,
+        "gzip",
+        local,
+        leg=leg,
+        threads=threads,
+        burst=burst,
+        write=write,
+        start_time=1000,
+        stop_after=None,
+    )
+    ctx.hdu_constructor_kwargs = dict(ctx.hdu_constructor_kwargs)
+    ctx.inline = inline
+    ctx.star_size = star_size
+    ctx.threshold = threshold
+
+    # merge backplane list with naming df
+    time_stamps = dosemaps_just_for_timestamps(ctx, radius=400)
+    leg_frames = frame_list.merge(time_stamps, on="time", how="outer")
+
+    # backplanes name formatting fNNNNdd_tNNNNdd
+    # this is probably an overly complex way to do the naming but ... it works
+    leg_frames['backplane_path'] = paths['movie'].replace('.fits.gz', f'_dose.fits') \
+        .replace('movie', 'tmovie')
+    # subtract first timestamp of photonlist
+    leg_frames['time_stamp'] = leg_frames['mod_time'].astype(str).str.split('.').str[0] \
+        .str.zfill(4).str.cat(leg_frames['mod_time'].astype(str).str.split('.').str[1].str[:4])
+    # backplane path
+    leg_frames['backplane_path'] = leg_frames['backplane_path'].str.split('movie').str[0] \
+        .str.cat(leg_frames['time_stamp']).str.cat(leg_frames['backplane_path']
+                                                   .str.split('movie').str[1])
+    # leg
+    leg_frames['leg'] = leg
+    # xylist path = l[leg]ts[time stamp].xyls
+    leg_frames['aspect_output'] = aspect_root + f"/e{eclipse_info['eclipse_str']}/astrom"
+    leg_frames['xylist_path'] = leg_frames['aspect_output'] + "/l" + leg_frames['leg'].astype(str)\
+                            + "ts" + (leg_frames['time_stamp'].astype(str)) + ".xyls"
+    # wcs path
+    leg_frames['wcs_path'] = leg_frames['aspect_output'] + "/l" + leg_frames['leg'].astype(str)\
+                            + "ts" + (leg_frames['time_stamp'].astype(str)) + ".wcs"
+    return leg_frames
+
 
 
