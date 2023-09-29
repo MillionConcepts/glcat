@@ -47,6 +47,7 @@ def refine_eclipse(
     # with paths for each backplane
     frame_list = get_frame_list(eclipse, metadata_paths)
     modified_frame_list = pd.DataFrame()
+    eclipse_aspect = {}
 
     if eclipse_info['actual_legs'] == 0:
         modified_frame_list = get_backplane_filenames(
@@ -62,26 +63,22 @@ def refine_eclipse(
             leg,
             aspect_root)
         modified_frame_list = pd.concat([modified_frame_list, files], axis=0)
-    modified_frame_list.to_csv("test.csv")
     for frame in range(len(modified_frame_list)):
         print(f"Running refine on frame {frame}")
-        #get next row info
-        try:
-            next_frame = modified_frame_list.iloc[frame+1]
-        except IndexError:
-            next_frame = modified_frame_list.iloc[frame-1]
         aspect = refine_frame(
-            modified_frame_list.iloc[frame],
-            eclipse_info,
-            aspect_root,
-            next_frame)
+                modified_frame_list.iloc[frame],
+                eclipse_info,
+                aspect_root)
         # aspect is tuple of ra, dec, roll, time
-        3  # TODO: do I want the new aspect to go in the old mod_frame_list or it's own file?
-        # modified_frame_list.iloc
-    return
+        eclipse_aspect[frame] = aspect
+
+    # convert dict of aspect solns to pd df and return
+    aspect_soln = pd.DataFrame.from_dict(eclipse_aspect, orient='index')
+
+    return aspect_soln
 
 
-def refine_frame(frame_series, eclipse_info, aspect_root, next_frame):
+def refine_frame(frame_series, eclipse_info, aspect_root):
     """refines a frame based on info in frame series (ex: normal or slew frame).
     important cols include: time, flags_x,ptag,hvnom_nuv,hvnom_fuv,ra_acs,
     dec_acs, roll_acs,frame_type,backplane_path,time_stamp,leg """
@@ -89,11 +86,12 @@ def refine_frame(frame_series, eclipse_info, aspect_root, next_frame):
         aspect = refine_slew_frame(
             frame_series,
             eclipse_info,
-            aspect_root,
-            next_frame)
-
+            aspect_root)
     elif frame_series['frame_type'] == "ref":
         aspect = refine_normal_frame(frame_series)
+    else:
+        print("Frame type not accepted.")
+        aspect = ()
     return aspect
 
 
@@ -177,9 +175,6 @@ def get_frame_list(
     # (only works if it's one entry)
     if new_aspect.iloc[-1].time - new_aspect.iloc[-2].time > 10:
         new_aspect.drop(new_aspect.tail(1).index, inplace=True)
-
-    #TODO: remove
-    new_aspect.to_csv("new_aspect.csv")
     return new_aspect
 
 
@@ -235,7 +230,7 @@ def get_backplane_filenames(
         .replace('movie', 'tmovie')
     # subtract first timestamp of photonlist
     leg_frames['time'] = leg_frames['time'] - t_f
-    leg_frames['time_stamp'] = leg_frames['time'].astype(str).str.split('.').str[0] \
+    leg_frames['time_stamp'] = leg_frames['time'].astype(str).str.spl2it('.').str[0] \
         .str.zfill(4).str.cat(leg_frames['time'].astype(str).str.split('.').str[1].str[:4])
     # backplane path
     leg_frames['backplane_path'] = leg_frames['backplane_path'].str.split('movie').str[0] \

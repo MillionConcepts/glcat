@@ -8,8 +8,7 @@ import os
 def refine_slew_frame(
         frame_series,
         eclipse_info,
-        aspect_root,
-        next_frame):
+        aspect_root):
     """ refine a slew frame. steps:
     1) filter 1s backplane w gaussian
     2) identify streaks in filtered image
@@ -48,7 +47,6 @@ def make_slew_paths(frame_series):
     slew_paths = {}
     slew_paths["smooth_backplane"] = frame_series["aspect_output"] + \
                                      f"smooth_{frame_series['time_stamp']}.fits"
-    # TODO: edit timestamp of short backplanes
     slew_paths["short_backplanes"] = [frame_series['backplane_path'] \
                                           .replace('f0001', 'f00001') for x in range(10)]
     slew_paths["streaks"] = frame_series["aspect_output"] + "streaks.txt"
@@ -210,12 +208,24 @@ def get_xylist_for_stacked(slew_paths, frame_series):
     """Use DAOStarFinder to extract point sources from stacked frames and
     produce a fits XYlist. """
     from photutils import DAOStarFinder
+
     s = fits.open(slew_paths['stacked_image'])
     sim = s[0].data
     daofind = DAOStarFinder(fwhm=4, threshold=1, sharplo=0.00)
     star_list = daofind(sim)
-    tbl = star_list.to_pandas()
-    # TODO: is output list sorted by flux? check
+
+    s = fits.open(slew_paths['stacked_opposite'])
+    sim = s[0].data
+    daofind = DAOStarFinder(fwhm=4, threshold=1, sharplo=0.00)
+    star_list_opposite = daofind(sim)
+
+    # the logic here is that the correctly stacked image will
+    # have less stars found by DAOStarFinder (less streaks)
+    if len(star_list_opposite) > len(star_list):
+        tbl = star_list.to_pandas()
+    if len(star_list_opposite) <= len(star_list):
+        tbl = star_list_opposite.to_pandas()
+
     star_list = tbl.sort_values(by="flux", ascending=False)
     colx = fits.Column(name='X', format='E', array=star_list['xcentroid'])
     coly = fits.Column(name='Y', format='E', array=star_list['ycentroid'])

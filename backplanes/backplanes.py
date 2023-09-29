@@ -19,7 +19,6 @@ from gPhoton.types import GalexBand
 from more_itertools import windowed
 from pyarrow import parquet
 from scipy.stats import binned_statistic_2d
-
 from gPhoton.moviemaker._steps import (
     select_on_detector,
     generate_wcs_components,
@@ -27,12 +26,9 @@ from gPhoton.moviemaker._steps import (
 )
 from gPhoton.pretty import print_inline
 from gPhoton.reference import PipeContext
-from gPhoton.sharing import (
-    reference_shared_memory_arrays
-)
+from gPhoton.sharing import (reference_shared_memory_arrays)
 from gPhoton.vorpal import between
-
-#from astrometry.aspect_correction.main import get_stars, make_file_names
+from aspect_correction.dose_aspect_correction import get_stars
 
 
 def stub_header(band, wcs=None, tranges=None):
