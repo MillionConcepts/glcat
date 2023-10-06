@@ -22,8 +22,10 @@ def refine_normal_frame(frame_series):
             frame_series['dec'],
             crpix_x,
             crpix_y)
+        print("Getting aspect from wcs file")
         aspect = get_aspect_from_wcsinfo(frame_series['wcs_path'])
     else:
+        print("xylist file doesn't exist.")
         aspect = None
     return aspect
 
@@ -69,6 +71,7 @@ def run_astrometry_net(
 def get_stars(frame_series):
     """ run DAO on movie frames, sort by flux """
     from photutils import DAOStarFinder
+    print(f"Opening frame image: {frame_series['backplane_path']}.")
     image = fits.open(frame_series['backplane_path'])
     daofind = DAOStarFinder(fwhm=2, threshold=0.65, sharplo=0.00)
     star_list = daofind(image[0].data)

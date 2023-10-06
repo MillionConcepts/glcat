@@ -27,6 +27,13 @@ def get_aspect_from_wcsinfo(wcs_path):
     return frame_wcs
 
 
+def get_quality_metrics_from_wcs(wcs_path):
+    """ read quality metrics from wcs fits header """
+    hdu = fits.open(wcs_path)
+    hdu[0].header
+    return
+
+
 def zero_flag_and_edge(cnt, flag, edge):
     """ set flag and edge pixels to zero within count array, used to prevent
     fake sources. """
@@ -62,8 +69,8 @@ def execute_combine(
         'run_type': run_type,
         'output_dir': output_directory
     }
-    file_names = make_file_names(opt)
-    asp_table = make_refined_aspect_table(file_names)
-    asp_table.to_csv(file_names["asp_df"])
+    #file_names = make_file_names(opt)
+    #asp_table = make_refined_aspect_table(file_names)
+    #asp_table.to_csv(file_names["asp_df"])
     return
 

@@ -5,6 +5,7 @@ from typing import Optional, Literal
 from pyarrow import parquet
 import pandas as pd
 from aspect_correction.slew_correction import refine_slew_frame
+from aspect_correction.dose_aspect_correction import refine_normal_frame
 from gPhoton.reference import PipeContext
 from backplanes import dosemaps_just_for_timestamps
 # aspect root = '/home/bekah/gPhoton2'/test_data'
@@ -65,15 +66,27 @@ def refine_eclipse(
         modified_frame_list = pd.concat([modified_frame_list, files], axis=0)
     for frame in range(len(modified_frame_list)):
         print(f"Running refine on frame {frame}")
-        aspect = refine_frame(
-                modified_frame_list.iloc[frame],
-                eclipse_info,
-                aspect_root)
-        # aspect is tuple of ra, dec, roll, time
-        eclipse_aspect[frame] = aspect
-
+        try:
+            aspect = refine_frame(
+                    modified_frame_list.iloc[frame],
+                    eclipse_info,
+                    aspect_root)
+            # aspect is tuple of ra, dec, roll, time
+            if aspect is not None:
+                eclipse_aspect[frame] = {'ra': float(aspect.iloc[0]['ra_tangent']),
+                                         'dec': float(aspect.iloc[0]['dec_tangent']),
+                                         'roll': float(aspect.iloc[0]['orientation']),
+                                         'pixscale': float(aspect.iloc[0]['pixscale']),
+                                         'ra_center': float(aspect.iloc[0]['ra_center']),
+                                         'dec_center': float(aspect.iloc[0]['dec_center']),
+                                         }
+                print(eclipse_aspect[frame])
+        except:
+            print("Something went wrong with that frame.")
     # convert dict of aspect solns to pd df and return
     aspect_soln = pd.DataFrame.from_dict(eclipse_aspect, orient='index')
+    aspect_soln.to_csv(f"{aspect_root}/e{eclipse_info['eclipse_str']}"
+                       f"/{eclipse_info['eclipse_str']}_new_aspect.csv")
 
     return aspect_soln
 
@@ -88,9 +101,9 @@ def refine_frame(frame_series, eclipse_info, aspect_root):
             frame_series,
             eclipse_info,
             aspect_root)
-    #elif frame_series['frame_type'] == "ref":
-    #    print(f"Running ref frame {frame_series['time']}.")
-    #    aspect = refine_normal_frame(frame_series)
+    elif frame_series['frame_type'] == "ref":
+        print(f"Running ref frame {frame_series['time']}.")
+        aspect = refine_normal_frame(frame_series)
     else:
         print(f"Frame type not accepted, frame {frame_series['time']}.")
         aspect = ()

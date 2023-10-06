@@ -9,7 +9,7 @@ from astropy.io import fits
 from pyarrow import parquet
 from retired.xylist_runs import get_stars
 from aspect_correction.combine_wcs import execute_combine
-from compare_aspect.main import write_aspect2
+from retired.main_compare_asp import write_aspect2
 from retired.xylist_runs import run_astrometry_net
 from tools.retrieve import get_eclipse_data
 from backplanes import make_backplanes, dosemaps_just_for_timestamps

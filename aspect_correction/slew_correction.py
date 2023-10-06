@@ -24,6 +24,7 @@ def refine_slew_frame(
     filter_image(frame_series, slew_paths)
     streaks = run_astride(frame_series, slew_paths)
     if streaks is None:
+        print("No streaks were found")
         return
     # if there are no detectable streaks, there's no point to this
     # need to make 10 .1 s backplanes of the frame

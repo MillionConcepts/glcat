@@ -4,11 +4,11 @@ import os
 import sys
 from typing import Optional
 from backplanes import make_backplanes
-from compare_aspect.psf_fitting import run_psf_compare
+from retired.psf_fitting import run_psf_compare
 from compare_aspect.plots import make_plots
 import pandas as pd
 sys.path.append('/home/bekah/gphoton_working')
-sys.path.append('/home/bekah/glcat/aspect_correction')
+sys.path.append('/aspect_correction')
 sys.path.append('/home/bekah/gphoton_working/gPhoton')
 
 
