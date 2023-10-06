@@ -5,6 +5,7 @@ from backplanes import make_backplanes
 from aspect_correction.util import get_aspect_from_wcsinfo
 import os
 
+
 def refine_slew_frame(
         frame_series,
         eclipse_info,
@@ -22,22 +23,32 @@ def refine_slew_frame(
     # run ASTRIDE on 1s frame that already exists after filtering
     filter_image(frame_series, slew_paths)
     streaks = run_astride(frame_series, slew_paths)
-    # if there are no detectable streaks, there's no point to this
     if streaks is None:
-        return None
+        return
+    # if there are no detectable streaks, there's no point to this
     # need to make 10 .1 s backplanes of the frame
-    # TODO: check for backplane production
-    make_shorter_backplanes(frame_series, eclipse_info, aspect_root)
-    if check_for_short_backplanes(slew_paths["short_backplanes"]):
+    time_df = make_shorter_backplanes(frame_series, eclipse_info, aspect_root)
+    time_df['backplane_path'] = frame_series['backplane_path_og'].replace('f0001', 'f00001')
+    time_df['time_stamp'] = time_df['mod_time'].astype(str).str.split('.').str[0] \
+        .str.zfill(4).str.cat(time_df['mod_time'].astype(str).str.split('.').str[1].str[:4])
+    # backplane path
+    time_df['short_backplanes'] = time_df['backplane_path'].str.split('movie').str[0] \
+        .str.cat(time_df['time_stamp']).str.cat(time_df['backplane_path']
+                                                   .str.split('movie').str[1])+".gz"
+    if check_for_short_backplanes(time_df["short_backplanes"].iloc[0]):
+        print("Stacking frames.")
         # get streak direction
         # direction = get_stack_direction(frame_series, slew_paths)
         # stack frames based on streaks
-        stack_frames(streaks, frame_series, slew_paths)
+        stack_frames(streaks, frame_series, slew_paths, time_df)
         # get xylist and send to astrometry.net
         h, w = get_xylist_for_stacked(slew_paths, frame_series)
         astrometry_xylist_slew(frame_series, h, w)
-        aspect = get_aspect_from_wcsinfo(frame_series['wcs_path'])
-        return aspect
+        if os.path.isfile(frame_series['wcs_path']):
+            aspect = get_aspect_from_wcsinfo(frame_series['wcs_path'])
+            return aspect
+        print("Astrometry failed to solve.")
+        return
     print("Short backplane creation failed for this frame.")
     return
 
@@ -47,9 +58,7 @@ def make_slew_paths(frame_series):
     slew_paths = {}
     slew_paths["smooth_backplane"] = frame_series["aspect_output"] + \
                                      f"smooth_{frame_series['time_stamp']}.fits"
-    slew_paths["short_backplanes"] = [frame_series['backplane_path'] \
-                                          .replace('f0001', 'f00001') for x in range(10)]
-    slew_paths["streaks"] = frame_series["aspect_output"] + "streaks.txt"
+    slew_paths["streaks"] = frame_series["aspect_output"] + "/streaks.txt"
     slew_paths["stacked"] = frame_series["aspect_output"] + \
                             f"stacked_{frame_series['time_stamp']}.fits"
     slew_paths["stacked_opposite"] = frame_series["aspect_output"] + \
@@ -60,7 +69,8 @@ def make_slew_paths(frame_series):
 def make_shorter_backplanes(frame_series, eclipse_info, aspect_root):
     """ make backplanes of .1 s from 1s snippet that is a frame  """
     print("writing slew frame .1s backplanes")
-    make_backplanes(
+    print(f" time: {frame_series['time']}")
+    time_df = make_backplanes(
         eclipse=eclipse_info['eclipse'],
         band=eclipse_info['band'],
         depth=.1,
@@ -74,15 +84,17 @@ def make_shorter_backplanes(frame_series, eclipse_info, aspect_root):
         inline=True,
         threshold=.75,
         star_size=2,
-        snippet=(eclipse_info['time'], eclipse_info['time'] + 1)
+        snippet=(frame_series['mission_time'], frame_series['mission_time'] + 1)
     )
-    return
+    return time_df
 
 
 def check_for_short_backplanes(short_backplanes):
     """ check that short backplanes were created
     before trying to stack """
-    return all(list(map(os.path.isfile, short_backplanes)))
+    print("Checking for short backplanes.")
+    check = os.path.isfile(short_backplanes)
+    return check
 
 
 def filter_image(frame_series, slew_paths):
@@ -93,7 +105,7 @@ def filter_image(frame_series, slew_paths):
     smooth = filters.gaussian(dose_ais[0].data, sigma=2)
     hdu = fits.PrimaryHDU(smooth)
     hdul = fits.HDUList([hdu])
-    hdul.writeto(slew_paths["smooth_backplane"])
+    hdul.writeto(slew_paths["smooth_backplane"], overwrite=True)
     return
 
 
@@ -107,7 +119,8 @@ def run_astride(frame_series, slew_paths):
         contour_threshold=4,
         min_points=1800,
         radius_dev_cut=0.3,
-        shape_cut=0.1)
+        shape_cut=0.1,
+        output_path=frame_series["aspect_output"])
     # Detect streaks.
     streak.detect()
     # Write outputs and plot figures.
@@ -119,25 +132,26 @@ def run_astride(frame_series, slew_paths):
     # 2) a list of dictionaries where each dictionary is a streak, and 'x'
     # 'y' within each dictionary each hold an array of x and y edge points,
     # respectively
-    x_vals = []
-    y_vals = []
+    streaks = {}
     for s in streak.streaks:
-        x_vals.append(s['x'])
-        y_vals.append(s['y'])
-    # these are for getting the outlines of streaks, which we don't really need
-    # except for plotting
-    # np.save('xvals.npy', np.array(x_vals, dtype=object), allow_pickle=True)
-    # np.save('yvals.npy', np.array(y_vals, dtype=object), allow_pickle=True)
-    streaks = get_streaks(slew_paths)
-    return streaks
+        streaks[s['index']] = {'x_min': s['x_min'],
+                               'x_max': s['x_max'],
+                               'y_min': s['y_min'],
+                               'y_max': s['y_max']}
+    streaks_df = get_streaks(pd.DataFrame.from_dict(streaks, orient='index'))
+    return streaks_df
 
 
-def get_streaks(slew_paths):
+def get_streaks(streaks):
     """ get streaks from ASTRIDE results and calculate parameters """
     # TODO: change expt
     expt = 2
-    streaks = pd.read_csv(slew_paths['streaks'], delim_whitespace=True)
+    #print(f"Reading streaks csv file: {slew_paths['streaks']}")
+    #streaks = pd.read_csv(slew_paths['streaks'], delim_whitespace=True)
     # calculate offsets
+    # if there are no streaks, don't go further
+    if len(streaks) == 0:
+        return None
     streaks['x_diff'] = streaks['x_min'] - streaks['x_max']
     streaks['y_diff'] = streaks['y_min'] - streaks['y_max']
     # max offset
@@ -157,7 +171,7 @@ def get_streaks(slew_paths):
     return streaks
 
 
-def stack_frames(streaks, frame_series, slew_paths):
+def stack_frames(streaks, frame_series, slew_paths, time_df):
     """ stack frames in two directions along linear streak """
     # num frames
     num_frames = 10
@@ -177,7 +191,7 @@ def stack_frames(streaks, frame_series, slew_paths):
     # iterate through adding 10 .1 s frames
     for frame in range(num_frames):
         # get frame image
-        frame_hdul = fits.open(slew_paths['short_backplanes'][frame])
+        frame_hdul = fits.open(time_df['short_backplanes'].iloc[frame])
         frame_image = frame_hdul[0].data
         # countdown layers
         inverse_layer = (num_frames - 1) - frame
@@ -209,7 +223,7 @@ def get_xylist_for_stacked(slew_paths, frame_series):
     produce a fits XYlist. """
     from photutils import DAOStarFinder
 
-    s = fits.open(slew_paths['stacked_image'])
+    s = fits.open(slew_paths['stacked'])
     sim = s[0].data
     daofind = DAOStarFinder(fwhm=4, threshold=1, sharplo=0.00)
     star_list = daofind(sim)
@@ -238,14 +252,15 @@ def get_xylist_for_stacked(slew_paths, frame_series):
 
 
 def astrometry_xylist_slew(frame_series, h, w):
-    """ run astrometry on a slew frame """
+    """ run astrometry on a slew frame. use acs for location guess. """
     import subprocess
+    print(frame_series)
+    print("Astrometry.net subprocess called.")
     cmd = f"solve-field --overwrite --dir {frame_series['aspect_output']} " \
           f"-w {w} -e {h} --scale-units arcsecperpix --scale-low 1.0 --scale-high 1.5 " \
-          f"-3 {frame_series['ra']} -4 {frame_series['dec']} " \
+          f"-3 {frame_series['ra_acs']} -4 {frame_series['dec_acs']} " \
           f"--radius 5 {frame_series['xylist_path']}"
     subprocess.call(cmd, shell=True)
-    print("Astrometry.net subprocess called.")
     return
 
 

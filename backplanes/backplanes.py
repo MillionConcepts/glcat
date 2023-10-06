@@ -84,9 +84,8 @@ def load_for_dosemap(photonfile, radius=400, snippet: Optional[tuple] = None):
         t = phot['t'][0]
         phot = parquet.read_table(
             photonfile, columns=['t', 'col', 'row', 'detrad'],
-            filters=[('t','>',snippet[0]-1),('t','<',snippet[1]+1)]
+            filters=[('t', '>', snippet[0]-1), ('t', '<', snippet[1]+1)]
         )
-
     phot = select_on_detector(phot, radius)
     return {
         't': phot['t'].to_numpy(),
@@ -283,6 +282,9 @@ def sparse_to_movie(sparse, imsz):
 
 
 def write_backplane_movies(frames, imsz, ctx, tranges, wcs=None, start_time=0, time_stamps=None):
+    if check_inline_write(ctx) is True and ctx.snippet is not None:
+        print("all outputs written inline; returning time ranges for snippet.")
+        return dosemaps_just_for_timestamps(ctx, radius=400)
     if check_inline_write(ctx) is True:
         print("all outputs written inline; terminating.")
         return
@@ -430,7 +432,6 @@ def dosemaps_just_for_timestamps(ctx: PipeContext, radius: int = 400):
         # frame value is trange[0] - start time of eclipse
         time_stamps[frame_ix] = (trange[0], trange[0] - start_time.as_py())
     time_df = pd.DataFrame.from_dict(time_stamps, columns=['time', 'mod_time'], orient='index')
-    time_df.to_csv("backplane_times.csv")
     return time_df
 
 

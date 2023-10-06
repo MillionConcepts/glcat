@@ -4,7 +4,6 @@ from gPhoton.types import Pathlike, GalexBand
 from typing import Optional, Literal
 from pyarrow import parquet
 import pandas as pd
-from aspect_correction.dose_aspect_correction import refine_normal_frame
 from aspect_correction.slew_correction import refine_slew_frame
 from gPhoton.reference import PipeContext
 from backplanes import dosemaps_just_for_timestamps
@@ -54,7 +53,8 @@ def refine_eclipse(
             eclipse_info,
             frame_list,
             paths[0],
-            0)
+            0,
+            aspect_root)
     for leg in range(eclipse_info['actual_legs']):
         files = get_backplane_filenames(
             eclipse_info,
@@ -83,14 +83,16 @@ def refine_frame(frame_series, eclipse_info, aspect_root):
     important cols include: time, flags_x,ptag,hvnom_nuv,hvnom_fuv,ra_acs,
     dec_acs, roll_acs,frame_type,backplane_path,time_stamp,leg """
     if frame_series['frame_type'] == "slew":
+        print(f"Running slew frame {frame_series['time']}.")
         aspect = refine_slew_frame(
             frame_series,
             eclipse_info,
             aspect_root)
-    elif frame_series['frame_type'] == "ref":
-        aspect = refine_normal_frame(frame_series)
+    #elif frame_series['frame_type'] == "ref":
+    #    print(f"Running ref frame {frame_series['time']}.")
+    #    aspect = refine_normal_frame(frame_series)
     else:
-        print("Frame type not accepted.")
+        print(f"Frame type not accepted, frame {frame_series['time']}.")
         aspect = ()
     return aspect
 
@@ -218,24 +220,26 @@ def get_backplane_filenames(
 
     # rounding to have file names match backplane names (not sure why
     # but timestamps are less sig figs in the aspect table)
-    t_f = round(t_f, 3)
-    t_l = round(t_l, 3)
-    frame_list = frame_list.round({'time': 3})
+    t_f = truncate(t_f)
+    t_l = truncate(t_l)
+    #frame_list = frame_list.round({'time': 3})
+    frame_list['time'] = frame_list['time'].apply(truncate)
 
     leg_frames = frame_list.loc[(frame_list['time'] >= t_f) & (frame_list['time'] <= t_l)].copy()
 
     # backplanes name formatting fNNNNdd_tNNNNdd
     # this is probably an overly complex way to do the naming but ... it works
-    leg_frames['backplane_path'] = paths['movie'].replace('.fits.gz', f'_dose.fits') \
+    leg_frames['backplane_path_og'] = paths['movie'].replace('.fits.gz', f'_dose.fits') \
         .replace('movie', 'tmovie')
     # subtract first timestamp of photonlist
+    leg_frames['mission_time'] = leg_frames['time'].copy()
     leg_frames['time'] = leg_frames['time'] - t_f
-    leg_frames['time_stamp'] = leg_frames['time'].astype(str).str.spl2it('.').str[0] \
+    leg_frames['time_stamp'] = leg_frames['time'].astype(str).str.split('.').str[0] \
         .str.zfill(4).str.cat(leg_frames['time'].astype(str).str.split('.').str[1].str[:4])
     # backplane path
-    leg_frames['backplane_path'] = leg_frames['backplane_path'].str.split('movie').str[0] \
-        .str.cat(leg_frames['time_stamp']).str.cat(leg_frames['backplane_path']
-                                                   .str.split('movie').str[1])
+    leg_frames['backplane_path'] = leg_frames['backplane_path_og'].str.split('movie').str[0] \
+        .str.cat(leg_frames['time_stamp']).str.cat(leg_frames['backplane_path_og']
+                                                   .str.split('movie').str[1]) + ".gz"
     # leg
     leg_frames['leg'] = leg
     # xylist path = l[leg]ts[time stamp].xyls
@@ -295,14 +299,14 @@ def get_backplane_filenames_mod(
 
     # backplanes name formatting fNNNNdd_tNNNNdd
     # this is probably an overly complex way to do the naming but ... it works
-    leg_frames['backplane_path'] = paths['movie'].replace('.fits.gz', f'_dose.fits') \
+    leg_frames['backplane_path_og'] = paths['movie'].replace('.fits.gz', f'_dose.fits') \
         .replace('movie', 'tmovie')
     # subtract first timestamp of photonlist
     leg_frames['time_stamp'] = leg_frames['mod_time'].astype(str).str.split('.').str[0] \
         .str.zfill(4).str.cat(leg_frames['mod_time'].astype(str).str.split('.').str[1].str[:4])
     # backplane path
-    leg_frames['backplane_path'] = leg_frames['backplane_path'].str.split('movie').str[0] \
-        .str.cat(leg_frames['time_stamp']).str.cat(leg_frames['backplane_path']
+    leg_frames['backplane_path'] = leg_frames['backplane_path_og'].str.split('movie').str[0] \
+        .str.cat(leg_frames['time_stamp']).str.cat(leg_frames['backplane_path_og']
                                                    .str.split('movie').str[1])
     # leg
     leg_frames['leg'] = leg
@@ -316,4 +320,10 @@ def get_backplane_filenames_mod(
     return leg_frames
 
 
+def truncate(num):
+    """ literally just for cutting floats to 3
+    dec places without rounding. """
+    places = 3
+    mult = 10 ** places
+    return int(num * mult) / mult
 

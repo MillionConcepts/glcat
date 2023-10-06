@@ -24,6 +24,7 @@ if __name__ == "__main__":
         # threshold and star_size for DAOStarFinder. matters only for
         # dosemap xylist
         threshold=.45,
-        star_size=2
+        star_size=2,
+        snippet=()
     )
 
