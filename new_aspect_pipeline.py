@@ -1,5 +1,6 @@
 import sys
 
+from dustgoggles.dynamic import exc_report
 from dustgoggles.structures import MaybePool
 
 sys.path.insert(0, '/home/bekah/gPhoton2')
@@ -87,23 +88,23 @@ def refine_eclipse(
     finally:
         pool.terminate()
     for frame, aspect in aspects.items():
-        # QUESTION: should the aspect is None case throw an error?
-        if aspect is not None:
-            try:
-                # aspect is tuple of ra, dec, roll, time
-                eclipse_aspect[frame] = {
-                    'ra': float(aspect.iloc[0]['ra_tangent']),
-                    'dec': float(aspect.iloc[0]['dec_tangent']),
-                    'roll': float(aspect.iloc[0]['orientation']),
-                    'pixscale': float(aspect.iloc[0]['pixscale']),
-                    'ra_center': float(aspect.iloc[0]['ra_center']),
-                    'dec_center': float(aspect.iloc[0]['dec_center']),
-                }
-            except Exception as ex:
-                print(
-                    f"Something went wrong with frame {frame}: {type(ex)}: "
-                    f"{ex}"
-                )
+        try:
+            if isinstance(aspect, Exception):
+                raise aspect
+            elif aspect is None:
+                raise ValueError("aspect is None")
+            eclipse_aspect[frame] = {
+                'ra': float(aspect.iloc[0]['ra_tangent']),
+                'dec': float(aspect.iloc[0]['dec_tangent']),
+                'roll': float(aspect.iloc[0]['orientation']),
+                'pixscale': float(aspect.iloc[0]['pixscale']),
+                'ra_center': float(aspect.iloc[0]['ra_center']),
+                'dec_center': float(aspect.iloc[0]['dec_center']),
+            }
+        except KeyboardInterrupt:
+            raise
+        except Exception as ex:
+            print(f"Error in frame {frame}:\n {exc_report(ex)}")
     # convert dict of aspect solns to pd df and return
     aspect_soln = pd.DataFrame.from_dict(eclipse_aspect, orient='index')
     aspect_soln.to_csv(f"{aspect_root}/e{eclipse_info['eclipse_str']}"
