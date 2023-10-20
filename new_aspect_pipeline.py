@@ -1,4 +1,7 @@
 import sys
+
+from dustgoggles.structures import MaybePool
+
 sys.path.insert(0, '/home/bekah/gPhoton2')
 from gPhoton.types import Pathlike, GalexBand
 from typing import Optional, Literal
@@ -18,7 +21,8 @@ def refine_eclipse(
         band: Literal["NUV", "FUV"],
         aspect_root: str,
         gphoton_root: str,
-        ext="gzip"):
+        ext="gzip",
+        threads=None):
     """ main pipeline for processing an eclipse frame by frame.
      this pipeline requires that all 1s backplanes be pre-produced.
       easiest script would run backplanes for a particular eclipse at 1s
@@ -29,7 +33,8 @@ def refine_eclipse(
        :param aspect_root: where backplanes are and you want astrometry to save
        output
        :param gphoton_root: where gphoton is, needed for metadata files etc
-       :param ext: file compression """
+       :param ext: file compression
+       :param threads: number of frames to run in parallel; None for serial"""
 
     # setup to run pipeline by getting relevant info & paths
     metadata_paths = metadata_filepaths(gphoton_root)
@@ -66,25 +71,39 @@ def refine_eclipse(
             leg,
             aspect_root)
         modified_frame_list = pd.concat([modified_frame_list, files], axis=0)
-    for frame in range(len(modified_frame_list)):
-        print(f"Running refine on frame {frame}")
-        try:
-            aspect = refine_frame(
-                    modified_frame_list.iloc[frame],
-                    eclipse_info,
-                    aspect_root,
-                    xylist)
-            # aspect is tuple of ra, dec, roll, time
-            if aspect is not None:
-                eclipse_aspect[frame] = {'ra': float(aspect.iloc[0]['ra_tangent']),
-                                         'dec': float(aspect.iloc[0]['dec_tangent']),
-                                         'roll': float(aspect.iloc[0]['orientation']),
-                                         'pixscale': float(aspect.iloc[0]['pixscale']),
-                                         'ra_center': float(aspect.iloc[0]['ra_center']),
-                                         'dec_center': float(aspect.iloc[0]['dec_center']),
-                                         }
-        except:
-            print("Something went wrong with that frame.")
+    pool = MaybePool(threads)
+    base_args = [eclipse_info, aspect_root, xylist]
+    frame_args = [
+        {'args': [modified_frame_list.iloc[frame]] + base_args}
+        for frame in range(len(modified_frame_list))
+    ]
+    # print(f"Running refine on frame {frame}")
+    # NOTE: will want to put statements like this inside refine_frame
+    try:
+        pool.map(refine_frame, frame_args)
+        pool.close()
+        pool.join()
+        aspects = pool.get()
+    finally:
+        pool.terminate()
+    for frame, aspect in aspects.items():
+        # QUESTION: should the aspect is None case throw an error?
+        if aspect is not None:
+            try:
+                # aspect is tuple of ra, dec, roll, time
+                eclipse_aspect[frame] = {
+                    'ra': float(aspect.iloc[0]['ra_tangent']),
+                    'dec': float(aspect.iloc[0]['dec_tangent']),
+                    'roll': float(aspect.iloc[0]['orientation']),
+                    'pixscale': float(aspect.iloc[0]['pixscale']),
+                    'ra_center': float(aspect.iloc[0]['ra_center']),
+                    'dec_center': float(aspect.iloc[0]['dec_center']),
+                }
+            except Exception as ex:
+                print(
+                    f"Something went wrong with frame {frame}: {type(ex)}: "
+                    f"{ex}"
+                )
     # convert dict of aspect solns to pd df and return
     aspect_soln = pd.DataFrame.from_dict(eclipse_aspect, orient='index')
     aspect_soln.to_csv(f"{aspect_root}/e{eclipse_info['eclipse_str']}"

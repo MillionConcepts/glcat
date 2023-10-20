@@ -5,6 +5,7 @@ refine_eclipse(eclipse=1532,
                band="NUV",
                aspect_root="/media/bekah/BekahA/glcat",
                gphoton_root="/home/bekah/gPhoton2",
-               ext="gzip")
+               ext="gzip",
+               threads=4)
 
 
