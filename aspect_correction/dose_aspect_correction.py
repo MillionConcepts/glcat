@@ -4,69 +4,50 @@ from astropy.io import fits
 import subprocess
 from aspect_correction.util import get_aspect_from_wcsinfo
 import os.path
+from hostess.subutils import Viewer
 
 
-def refine_normal_frame(frame_series):
+def refine_normal_frame(frame_series, xylist):
     """ main refined for a "normal" frame. extracts stars via daofind, sends
     xylist to astrometry.net, uses wcsinfo to get resulting aspect soln """
-    print(f"extracting sources from frame")
-    get_stars(frame_series)
-    if os.path.isfile(frame_series["xylist_path"]):
-        image_width, image_height, crpix_x, crpix_y = get_image_size(frame_series)
-        run_astrometry_net(
-            frame_series["xylist_path"],
-            frame_series["aspect_output"],
-            image_width,
-            image_height,
-            frame_series['ra'],
-            frame_series['dec'],
-            crpix_x,
-            crpix_y)
-        print("Getting aspect from wcs file")
-        aspect = get_aspect_from_wcsinfo(frame_series['wcs_path'])
-    else:
-        print("xylist file doesn't exist.")
-        aspect = None
-    return aspect
-
-
-def run_astrometry_net(
-        xylist_path,
-        output_path,
-        image_width,
-        image_height,
-        ra,
-        dec,
-        crpix_x,
-        crpix_y):
-    """ Main call to astrometry.net:
-    solve-field: command to solve for aspect solution
-    --overwrite: write over files
-    --no-tweak: no SIPs correction
-    --no-plots: hypothetically, no plots
-    -w image width, -e image height
-    -L and -H: pixel scale upper and lower bounds, -u app is unit
-    -3 and -4: ra and dec
-    --crpix-x and --crpix-y: center pixel of image for ra and dec
-    --radius: area to search around ra and dec in degrees
-    --verify: if there is an existing wcs, verify it
-    --verify-ext 1: hdu extension for wcs existing
-    then at the end is the path to the x,y list of sources in a FITS table """
-
-    print(f"Running astrometry.net on frame.")
-    cmd = f"solve-field --overwrite --no-plots --dir {output_path} -w {image_width} -e {image_height} " \
-          f" --scale-units arcsecperpix --scale-low 1.0 --scale-high 1.6" \
-          f"-N none -U none --axy none -B none -M none -R none " \
-          f" -3 {ra} -4 {dec} --crpix-x {crpix_x} --crpix-y {crpix_y} --radius 5 {xylist_path}"
-    # --no-tweak -3 {ra} -4 {dec} --scale-units arcsecperpix --scale-low 1.48 --scale-high 1.52
-    # f" --verify '/home/bekah/glcat/astrometry/e{eclipse}/e{eclipse}-nd-{expt}s-0-f0000-rice.fits' --verify-ext 1 " \
-    # -L 1.2 -H 1.8 -u app
-    # RADIUS USED TO BE 3
-
-    subprocess.call(cmd, shell=True)
-
-    return None
-
+    if xylist:
+        print(f"extracting sources from frame")
+        get_stars(frame_series)
+        if os.path.isfile(frame_series["xylist_path"]):
+            image_width, image_height, crpix_x, crpix_y = get_image_size(frame_series)
+            done = astrometry_hostess_run(
+                frame_series["xylist_path"],
+                frame_series["aspect_output"],
+                image_width,
+                image_height,
+                frame_series['ra'],
+                frame_series['dec'],
+                crpix_x,
+                crpix_y)
+        else:
+            print("xylist file doesn't exist.")
+            return None
+    if not xylist:
+        if os.path.isfile(frame_series["backplane_path"]):
+            backplane = frame_series['backplane_path']
+            done = astrometry_hostess_image_run(
+                backplane,
+                frame_series["aspect_output"],
+                frame_series['ra'],
+                frame_series['dec'])
+        else:
+            print(f"backplane file, "
+                  f"{frame_series['backplane_path']} doesn't exist.")
+            return None
+    print("Getting aspect from wcs file")
+    if done:
+        try:
+            aspect = get_aspect_from_wcsinfo(frame_series['wcs_path'])
+            print("got aspect from wcsinfo.")
+            return aspect
+        finally:
+            return None
+    return
 
 def get_stars(frame_series):
     """ run DAO on movie frames, sort by flux """
@@ -104,3 +85,70 @@ def get_image_size(frame_series):
     crpix_y = image_height/2  # DEC -- TAN
     return image_width, image_height, crpix_x, crpix_y
 
+
+def astrometry_hostess_run(
+        xylist_path,
+        output_path,
+        image_width,
+        image_height,
+        ra,
+        dec,
+        crpix_x,
+        crpix_y):
+    """ use hostess to managae runs to astrometry. keeps things
+    formatted nicely. astrometry is done running when solve_process.wait()
+    finishes and solve_process.done returns True (hopefully). """
+    solve_process = Viewer.from_command(
+        "solve-field",
+        xylist_path,
+        overwrite=True,
+        no_plots=True,
+        dir_=output_path,
+        width=image_width,
+        height=image_height,
+        scale_units="arcsecperpix",
+        scale_low=1.0,
+        scale_high=1.6,
+        N="none",
+        U="none",
+        B="none",
+        M="none",
+        R="none",
+        ra=ra,
+        dec=dec,
+        radius=5,
+        temp_axy=True,
+        crpix_x=crpix_x,
+        crpix_y=crpix_y)
+    solve_process.wait()
+    return solve_process.done
+
+
+def astrometry_hostess_image_run(
+        backplanepath,
+        output_path,
+        ra,
+        dec):
+    """ use hostess to managae runs to astrometry with images
+     not xylists """
+    print(f"running astrometry on image {backplanepath}")
+    solve_process = Viewer.from_command(
+        "solve-field",
+        backplanepath,
+        overwrite=True,
+        no_plots=True,
+        dir_=output_path,
+        scale_units="arcsecperpix",
+        scale_low=1.0,
+        scale_high=1.6,
+        N="none",
+        U="none",
+        B="none",
+        M="none",
+        R="none",
+        ra=ra,
+        dec=dec,
+        radius=5,
+        temp_axy=True)
+    solve_process.wait()
+    return solve_process.done

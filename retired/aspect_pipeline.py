@@ -185,6 +185,41 @@ def check_backplanes(eclipse, file_names, ctx):
     return frame_catalog
 
 
+def run_astrometry_net(
+        xylist_path,
+        output_path,
+        image_width,
+        image_height,
+        ra,
+        dec,
+        crpix_x,
+        crpix_y):
+    """ Main call to astrometry.net:
+    solve-field: command to solve for aspect solution
+    --overwrite: write over files
+    --no-tweak: no SIPs correction
+    --no-plots: hypothetically, no plots
+    -w image width, -e image height
+    -L and -H: pixel scale upper and lower bounds, -u app is unit
+    -3 and -4: ra and dec
+    --crpix-x and --crpix-y: center pixel of image for ra and dec
+    --radius: area to search around ra and dec in degrees
+    --verify: if there is an existing wcs, verify it
+    --verify-ext 1: hdu extension for wcs existing
+    then at the end is the path to the x,y list of sources in a FITS table """
 
+    print(f"Running astrometry.net on frame.")
+    cmd = f"solve-field --overwrite --no-plots --dir {output_path} -w {image_width} -e {image_height} " \
+          f" --scale-units arcsecperpix --scale-low 1.0 --scale-high 1.6" \
+          f" -N none -U none --temp-axy -B none -M none -R none " \
+          f" -3 {ra} -4 {dec} --crpix-x {crpix_x} --crpix-y {crpix_y} --radius 5 {xylist_path}"
+    # --no-tweak -3 {ra} -4 {dec} --scale-units arcsecperpix --scale-low 1.48 --scale-high 1.52
+    # f" --verify '/home/bekah/glcat/astrometry/e{eclipse}/e{eclipse}-nd-{expt}s-0-f0000-rice.fits' --verify-ext 1 " \
+    # -L 1.2 -H 1.8 -u app
+    # RADIUS USED TO BE 3
+
+    subprocess.call(cmd, shell=True)
+
+    return None
 
 

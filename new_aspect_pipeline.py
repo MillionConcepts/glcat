@@ -14,6 +14,7 @@ from backplanes import dosemaps_just_for_timestamps
 
 def refine_eclipse(
         eclipse: int,
+        xylist: bool,
         band: Literal["NUV", "FUV"],
         aspect_root: str,
         gphoton_root: str,
@@ -23,6 +24,7 @@ def refine_eclipse(
       easiest script would run backplanes for a particular eclipse at 1s
        intervals and then runs this function.
        :param eclipse: eclipse number, not paddded
+       :param xylist: true if wantt to use xylists for norm frame processing
        :param band: 'NUV' or 'FUV'
        :param aspect_root: where backplanes are and you want astrometry to save
        output
@@ -70,7 +72,8 @@ def refine_eclipse(
             aspect = refine_frame(
                     modified_frame_list.iloc[frame],
                     eclipse_info,
-                    aspect_root)
+                    aspect_root,
+                    xylist)
             # aspect is tuple of ra, dec, roll, time
             if aspect is not None:
                 eclipse_aspect[frame] = {'ra': float(aspect.iloc[0]['ra_tangent']),
@@ -80,7 +83,6 @@ def refine_eclipse(
                                          'ra_center': float(aspect.iloc[0]['ra_center']),
                                          'dec_center': float(aspect.iloc[0]['dec_center']),
                                          }
-                print(eclipse_aspect[frame])
         except:
             print("Something went wrong with that frame.")
     # convert dict of aspect solns to pd df and return
@@ -91,7 +93,7 @@ def refine_eclipse(
     return aspect_soln
 
 
-def refine_frame(frame_series, eclipse_info, aspect_root):
+def refine_frame(frame_series, eclipse_info, aspect_root, xylist):
     """refines a frame based on info in frame series (ex: normal or slew frame).
     important cols include: time, flags_x,ptag,hvnom_nuv,hvnom_fuv,ra_acs,
     dec_acs, roll_acs,frame_type,backplane_path,time_stamp,leg """
@@ -103,7 +105,7 @@ def refine_frame(frame_series, eclipse_info, aspect_root):
             aspect_root)
     elif frame_series['frame_type'] == "ref":
         print(f"Running ref frame {frame_series['time']}.")
-        aspect = refine_normal_frame(frame_series)
+        aspect = refine_normal_frame(frame_series, xylist)
     else:
         print(f"Frame type not accepted, frame {frame_series['time']}.")
         aspect = ()
@@ -262,7 +264,6 @@ def get_backplane_filenames(
     # wcs path
     leg_frames['wcs_path'] = leg_frames['aspect_output'] + "/l" + leg_frames['leg'].astype(str)\
                             + "ts" + (leg_frames['time_stamp'].astype(str)) + ".wcs"
-   # print(leg_frames)
     return leg_frames
 
 

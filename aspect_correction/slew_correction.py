@@ -258,7 +258,7 @@ def astrometry_xylist_slew(frame_series, h, w):
     print(frame_series)
     print("Astrometry.net subprocess called.")
     cmd = f"solve-field --overwrite --dir {frame_series['aspect_output']} " \
-          f"-w {w} -e {h} --scale-units arcsecperpix --scale-low 1.0 --scale-high 1.5 " \
+          f"-w {w} -e {h} --temp-axy --scale-units arcsecperpix --scale-low 1.0 --scale-high 1.5 " \
           f"-3 {frame_series['ra_acs']} -4 {frame_series['dec_acs']} " \
           f"--radius 5 {frame_series['xylist_path']}"
     subprocess.call(cmd, shell=True)
