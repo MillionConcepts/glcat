@@ -46,8 +46,10 @@ def refine_normal_frame(frame_series, xylist):
             print(aspect)
             return aspect
         except:
+            print("No aspect.")
             return None
     return None
+
 
 def get_stars(frame_series):
     """ run DAO on movie frames, sort by flux """
