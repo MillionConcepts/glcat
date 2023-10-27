@@ -16,6 +16,7 @@ def get_aspect_from_wcsinfo(wcs_path):
      we use wcsinfo instead of reading the wcs header because it returns more
      information using other functions within astrometry.net (ie could
      recreate wcsinfo ourselves but it's a lot of work and written in c)."""
+    print(f"wcs is supposed to be in file: {wcs_path}.")
     output = subprocess.check_output(f"wcsinfo {wcs_path}",
                                      stderr=subprocess.STDOUT,
                                      shell=True)

@@ -130,7 +130,7 @@ def refine_eclipse(
     cleanup_eclipse_files(astrom_folder_path)
     cleanup_temp_files(tmp_root)
     print(f"Aspect soln saved to: {aspect_soln_filepath}")
-    return aspect_soln
+    return aspect_soln_filepath
 
 
 def make_aspect_folder(aspect_root, eclipse_info):
@@ -194,6 +194,7 @@ def refine_frame(frame_series, eclipse_info, backplane_root, aspect_root, xylist
     aspect['hvnom_nuv'] = frame_series['hvnom_nuv']
     aspect['hvnom_fuv'] = frame_series['hvnom_fuv']
     aspect['mission_time'] = frame_series['mission_time']
+    aspect['orientation'] = frame_series['orientation']
     return aspect
 
 
@@ -325,8 +326,12 @@ def get_backplane_filenames(
     leg_frames['xylist_path'] = leg_frames['aspect_output'] + "/l" + leg_frames['leg'].astype(str)\
                             + "ts" + (leg_frames['time_stamp'].astype(str)) + ".xyls"
     # wcs path
-    leg_frames['wcs_path'] = leg_frames['aspect_output'] + "/l" + leg_frames['leg'].astype(str)\
-                            + "ts" + (leg_frames['time_stamp'].astype(str)) + ".wcs"
+    #leg_frames['wcs_path'] = leg_frames['aspect_output'] + "/l" + leg_frames['leg'].astype(str)\
+    #                        + "ts" + (leg_frames['time_stamp'].astype(str)) + ".wcs"
+    leg_frames['wcs_path'] = leg_frames['backplane_path'].copy()
+    leg_frames['wcs_path'] = leg_frames['wcs_path'].str.\
+        replace('.fits.gz', '.wcs').str.\
+        replace('backplanes', 'aspect')
     return leg_frames
 
 
