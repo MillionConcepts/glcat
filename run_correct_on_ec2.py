@@ -11,12 +11,12 @@ with PRO.context(eclipse_str):
     base = "backplanes"
     base2 = "aspect"
     bucket_path = f"s3://backplanetest/{eclipse_str}/"
-    ec2_base = f"home/ubuntu/{base}"
-    ec2_base2 = f"home/ubuntu/{base2}"
+    ec2_base = f"/home/ubuntu/{base}"
+    ec2_base2 = f"/home/ubuntu/{base2}"
     ec2_full = ec2_base+"/"+eclipse_str
 
     # get files from s3 bucket
-    get_files = f'aws s3 cp "{bucket_path}" "{ec2_full}"'
+    get_files = f'aws s3 cp "{bucket_path}" "{ec2_full}" --recursive'
 
     # make dirs on instance
     if not os.path.exists(ec2_base):
