@@ -44,10 +44,11 @@ def refine_normal_frame(frame_series, xylist):
         try:
             aspect = get_aspect_from_wcsinfo(frame_series['wcs_path'])
             print("got aspect from wcsinfo.")
+            print(aspect)
             return aspect
-        finally:
+        except:
             return None
-    return
+    return None
 
 def get_stars(frame_series):
     """ run DAO on movie frames, sort by flux """

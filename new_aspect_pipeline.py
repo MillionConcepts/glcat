@@ -23,7 +23,8 @@ def refine_eclipse(
         aspect_root: str,
         gphoton_root: str,
         ext="gzip",
-        threads=None):
+        threads=None,
+        tmp_root="/tmp"):
     """ main pipeline for processing an eclipse frame by frame.
      this pipeline requires that all 1s backplanes be pre-produced.
       easiest script would run backplanes for a particular eclipse at 1s
@@ -35,7 +36,8 @@ def refine_eclipse(
        output
        :param gphoton_root: where gphoton is, needed for metadata files etc
        :param ext: file compression
-       :param threads: number of frames to run in parallel; None for serial"""
+       :param threads: number of frames to run in parallel; None for serial
+       :param tmp_root: where temp files are put by astrom, need for cleanup"""
 
     # setup to run pipeline by getting relevant info & paths
     metadata_paths = metadata_filepaths(gphoton_root)
@@ -100,17 +102,49 @@ def refine_eclipse(
                 'pixscale': float(aspect.iloc[0]['pixscale']),
                 'ra_center': float(aspect.iloc[0]['ra_center']),
                 'dec_center': float(aspect.iloc[0]['dec_center']),
+                'logodds': float(aspect.iloc[0]['logodds'])
             }
         except KeyboardInterrupt:
             raise
         except Exception as ex:
-            print(f"Error in frame {frame}:\n {exc_report(ex)}")
+            print(f"Error in frame {frame}")
     # convert dict of aspect solns to pd df and return
     aspect_soln = pd.DataFrame.from_dict(eclipse_aspect, orient='index')
     aspect_soln.to_csv(f"{aspect_root}/e{eclipse_info['eclipse_str']}"
                        f"/{eclipse_info['eclipse_str']}_new_aspect.csv")
+    # clean up
+    cleanup_eclipse_files(aspect_root, eclipse_info)
+    cleanup_temp_files(tmp_root)
 
     return aspect_soln
+
+
+def cleanup_eclipse_files(aspect_root, eclipse_info):
+    """ delete aspect directory (not final asp soln) and also the intermediate
+    files created by astrometry.net """
+    import shutil
+    folder_path = f"{aspect_root}+{eclipse_info['eclipse_str']}/aspect"
+    try:
+        shutil.rmtree(folder_path)
+        print(f"Deleted folder: {folder_path}")
+    except OSError as e:
+        print(f"Error deleting folder: {e}")
+    return
+
+
+def cleanup_temp_files(tmp_root):
+    """ remove tmp files produced by astrometry.net """
+    import os
+    strings_to_check = ["tmp.uncompressed", "tmp.ppm", ".pnm", "tmp.axy"]
+    for filename in os.listdir(tmp_root):
+        file_path = os.path.join(tmp_root, filename)
+        if any(substring in filename for substring in strings_to_check):
+            try:
+                os.remove(file_path)
+                print(f"Removed file: {file_path}")
+            except OSError as e:
+                print(f"Error removing file: {e}")
+    return
 
 
 def refine_frame(frame_series, eclipse_info, aspect_root, xylist):

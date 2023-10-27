@@ -24,14 +24,19 @@ def get_aspect_from_wcsinfo(wcs_path):
     frame_wcs = pd.read_csv(io.StringIO(output), sep=' ')
     frame_wcs = frame_wcs.set_index('name')
     frame_wcs = frame_wcs.transpose()
+    logodds = get_logodds_from_wcs(wcs_path)
+    frame_wcs['logodds'] = logodds
     return frame_wcs
 
 
-def get_quality_metrics_from_wcs(wcs_path):
-    """ read quality metrics from wcs fits header """
-    hdu = fits.open(wcs_path)
-    hdu[0].header
-    return
+def get_logodds_from_wcs(wcs_path):
+    """ read logodds from wcs fits header """
+    hdul = fits.open(wcs_path)
+    try:
+        logodds = str(hdul[0].header['COMMENT']).split("log odds: ")[1].split('.')[0]
+        return logodds
+    except:
+            return None
 
 
 def zero_flag_and_edge(cnt, flag, edge):
