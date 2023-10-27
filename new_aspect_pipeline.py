@@ -115,7 +115,8 @@ def refine_eclipse(
                 'flags_x': float(aspect.iloc[0]['flags_x']),
                 'hvnom_nuv': float(aspect.iloc[0]['hvnom_nuv']),
                 'hvnom_fuv': float(aspect.iloc[0]['hvnom_fuv']),
-                'mission_time': float(aspect.iloc[0]['mission_time'])
+                'mission_time': float(aspect.iloc[0]['mission_time']),
+                'orientation': float(aspect.iloc[0]['orientation'])
             }
         except KeyboardInterrupt:
             raise
@@ -194,7 +195,7 @@ def refine_frame(frame_series, eclipse_info, backplane_root, aspect_root, xylist
     aspect['hvnom_nuv'] = frame_series['hvnom_nuv']
     aspect['hvnom_fuv'] = frame_series['hvnom_fuv']
     aspect['mission_time'] = frame_series['mission_time']
-    aspect['orientation'] = frame_series['orientation']
+
     return aspect
 
 

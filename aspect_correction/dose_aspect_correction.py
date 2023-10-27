@@ -43,7 +43,6 @@ def refine_normal_frame(frame_series, xylist):
         try:
             aspect = get_aspect_from_wcsinfo(frame_series['wcs_path'])
             print("got aspect from wcsinfo.")
-            print(aspect)
             return aspect
         except:
             print("No aspect.")
