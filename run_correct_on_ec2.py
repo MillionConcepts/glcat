@@ -13,7 +13,7 @@ with PRO.context(eclipse_str):
     bucket_path = f"s3://backplanetest/{eclipse_str}/"
     ec2_base = f"home/ubuntu/{base}"
     ec2_base2 = f"home/ubuntu/{base2}"
-    ec2_full = ec2_base+eclipse_str
+    ec2_full = ec2_base+"/"+eclipse_str
 
     # get files from s3 bucket
     get_files = f"aws s3 cp {bucket_path} {ec2_full}"
@@ -50,7 +50,7 @@ with PRO.context(eclipse_str):
     aspect = refine_eclipse(eclipse=eclipse,
                    xylist=False,
                    band="NUV",
-                   backplane_root=ec2_full,
+                   backplane_root=ec2_base,
                    aspect_root=ec2_base2,
                    gphoton_root="/home/ubuntu/gPhoton2",
                    ext="gzip",
