@@ -163,6 +163,12 @@ def refine_frame(frame_series, eclipse_info, aspect_root, xylist):
     else:
         print(f"Frame type not accepted, frame {frame_series['time']}.")
         aspect = ()
+    aspect['time'] = frame_series['time']
+    aspect['frame_type'] = frame_series['frame_type']
+    aspect['flags_x'] = frame_series['flags_x']
+    aspect['hvnom_nuv'] = frame_series['hvnom_nuv']
+    aspect['hvnom_fuv'] = frame_series['hvnom_fuv']
+    aspect['mission_time'] = frame_series['mission_time']
     return aspect
 
 
