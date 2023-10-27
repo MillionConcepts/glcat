@@ -1,7 +1,6 @@
 """functions to run astrometry.net with xylists of stars"""
 
 from astropy.io import fits
-import subprocess
 from aspect_correction.util import get_aspect_from_wcsinfo
 import os.path
 from hostess.subutils import Viewer

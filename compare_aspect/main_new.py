@@ -8,6 +8,8 @@ import pandas as pd
 #sys.path.append('/home/bekah/gphoton_working')
 sys.path.append('/home/bekah/glcat/aspect_correction')
 sys.path.append('/home/bekah/gPhoton2/gPhoton')
+sys.path.append('/home/ubuntu/glcat/aspect_correction')
+sys.path.append('/home/ubuntu/gPhoton2/gPhoton')
 
 
 def run_compare(

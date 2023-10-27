@@ -58,7 +58,7 @@ def make_slew_paths(frame_series):
     """ making paths for files that only exist for slew frames """
     slew_paths = {}
     slew_paths["smooth_backplane"] = frame_series["aspect_output"] + \
-                                     f"smooth_{frame_series['time_stamp']}.fits"
+                                     f"/smooth_{frame_series['time_stamp']}.fits"
     slew_paths["streaks"] = frame_series["aspect_output"] + "/streaks.txt"
     slew_paths["stacked"] = frame_series["aspect_output"] + \
                             f"stacked_{frame_series['time_stamp']}.fits"
