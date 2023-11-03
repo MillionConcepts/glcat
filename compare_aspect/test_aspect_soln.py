@@ -3,6 +3,7 @@
 
 import os
 import sys
+import shutil
 from psf_fitting_new import run_psf_compare
 from plots import make_plots
 import pandas as pd
@@ -75,11 +76,16 @@ def run_compare(
     psf_comparison_tab = run_psf_compare(file_names)
     print(f"saving psf fitting results to csv at {file_names['psf_comp']}")
     psf_comparison_tab.to_csv(file_names['psf_comp'])
+
+    shutil.rmtree(og_folder)
+    shutil.rmtree(new_folder)
+
     return
 
 
 def get_file_names(eclipse, band, leg, og_folder, new_folder, root):
     """ image file names and photonlists """
+    results = "/home/bekah/test_results/"
     file_names = {}
     eclipse_num = str(eclipse).zfill(5)
     eclipse_str = "e" + eclipse_num
@@ -93,16 +99,17 @@ def get_file_names(eclipse, band, leg, og_folder, new_folder, root):
     file_names['old_image_file'] = og_folder + eclipse_str + f"-{b}-b{leg_str}-ffull-image-r.fits"
     file_names['new_image_file'] = new_folder + eclipse_str + f"-{b}-b{leg_str}-ffull-image-r.fits"
     # if aperture changes, 12_8 will change. could propagate up as a variable.
-    file_names['psf_comp'] = og_folder + eclipse_str + f"psf_comp.csv"
     file_names['old_photom_file'] = og_folder + eclipse_str + f"-{b}-b{leg_str}-" \
                                                               f"ffull-image-" \
                                                               f"photom-12_8.csv"
-    file_names['image_comparison'] = og_folder + eclipse_str+"-image-compare.jpg"
-    file_names['new_aspect'] = root+"test_data/"+eclipse_num + "_new_aspect.csv"
     file_names['old_aspect_parq'] = root+'gPhoton/aspect/aspect.parquet'
     file_names['aspect_parq'] = root+'gPhoton/aspect/aspect2.parquet'
-    file_names['star_cutouts'] = og_folder + eclipse_str +"-star-cutouts.jpg"
-    file_names['star_cutouts_new'] = og_folder + eclipse_str +"-star-cutouts-newasp.jpg"
+
+    file_names['psf_comp'] = og_folder + eclipse_str + f"psf_comp.csv"
+    file_names['image_comparison'] = og_folder + eclipse_str + "-image-compare.jpg"
+    file_names['new_aspect'] = root + "test_data/aspect/" + eclipse_num + "_new_aspect.csv"
+    file_names['star_cutouts'] = results + eclipse_str + "-star-cutouts.jpg"
+    file_names['star_cutouts_new'] = results + eclipse_str + "-star-cutouts-newasp.jpg"
 
     return file_names
 

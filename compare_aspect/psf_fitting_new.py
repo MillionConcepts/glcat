@@ -128,7 +128,7 @@ def make_psf_plots(stars, file):
     ax = ax.ravel()
     for i in range(nrows * ncols):
         # currently only plotting the first 25 stars
-        ax[i].imshow(centile_clip(stars[i]), origin='lower', cmap='viridis')
+        ax[i].imshow(centile_clip(stars[i], (0, 99.5)), origin='lower', cmap='viridis')
         ax[i].set_yticklabels([])
         ax[i].set_xticklabels([])
     plt.savefig(file)

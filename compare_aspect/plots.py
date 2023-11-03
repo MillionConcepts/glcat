@@ -23,10 +23,12 @@ def image_plot(file_names):
     fig, axs = plt.subplots(2)
     old_image = fits.open(file_names['old_image_file'])
     new_image = fits.open(file_names['new_image_file'])
-    axs[0].imshow(centile_clip(old_image[1].data, (0, 99)),
+    axs[0].imshow(centile_clip(old_image[1].data, (0, 99.5)),
                   interpolation='none', cmap='Greys_r', origin='lower')
-    axs[1].imshow(centile_clip(new_image[1].data, (0, 99)),
+    axs[0].set_title("old")
+    axs[1].imshow(centile_clip(new_image[1].data, (0, 99.5)),
                   interpolation='none', cmap='Greys_r', origin='lower')
+    axs[1].set_title("new")
     plt.savefig(file_names['image_comparison'])
     return
 
@@ -61,7 +63,6 @@ def centile_clip(image, centiles=(0, 90)):
     percentile range
     """
     import numpy as np
-
     finite = np.ma.masked_invalid(image)
     bounds = np.percentile(finite[~finite.mask].data, centiles)
     result = np.ma.clip(finite, *bounds)
