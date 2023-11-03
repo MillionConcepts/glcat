@@ -150,6 +150,7 @@ def astrometry_hostess_image_run(
         ra=ra,
         dec=dec,
         radius=5,
-        temp_axy=True)
+        temp_axy=True,
+        m="/tmp")
     solve_process.wait()
     return solve_process.done

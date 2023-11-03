@@ -6,8 +6,8 @@ from retired.psf_fitting import run_psf_compare
 from compare_aspect.plots import make_plots
 import pandas as pd
 #sys.path.append('/home/bekah/gphoton_working')
-sys.path.append('/home/bekah/glcat/aspect_correction')
-sys.path.append('/home/bekah/gPhoton2/gPhoton')
+sys.path.append('/aspect_correction')
+sys.path.append('/gPhoton')
 sys.path.append('/home/ubuntu/glcat/aspect_correction')
 sys.path.append('/home/ubuntu/gPhoton2/gPhoton')
 

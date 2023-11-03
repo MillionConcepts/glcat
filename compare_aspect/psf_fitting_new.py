@@ -8,10 +8,10 @@ from astropy.stats import sigma_clipped_stats
 from photutils.psf import extract_stars, EPSFBuilder
 import pandas as pd
 import numpy as np
-from compare_aspect.plots import centile_clip
+from plots import centile_clip
 
 
-def run_psf_compare(file_names, runtype):
+def run_psf_compare(file_names):
     """ extract cutouts of stars from two different images using star
     locations id'd in a photometry file, filtered by area & flux to
     get relatively bright and small stars, fit a gaussian psf to each
@@ -20,25 +20,22 @@ def run_psf_compare(file_names, runtype):
     # use photom results from gphoton to get star locations to compare
     global og_stars
     stars_tbl = get_good_stars(file_names)
-    if runtype != "short":
-        # og stars cutout
-        og_stars = cutout_stars(stars_tbl, file_names['old_image_file'])
-        # pic of star cutouts
-        make_psf_plots(og_stars, file_names)
-    # new stars cutout (same star locations)6
+    og_stars = cutout_stars(stars_tbl, file_names['old_image_file'])
+    make_psf_plots(og_stars, file_names['star_cutouts'])
+    # new stars cutout (same star locations)
     new_stars = cutout_stars(stars_tbl, file_names['new_image_file'])
+    make_psf_plots(new_stars, file_names['star_cutouts_new'])
     psf_comparison_tab = pd.DataFrame()
-    for x in range(int(len(stars_tbl)*.5)):
+    for x in range(int(len(stars_tbl)*.15)):
         # subject to change, this saves time right now
-        if runtype != "short":
-            og_result_tab = fit_gaussian_prf(og_stars[x].data)
-            if len(og_result_tab) != 0:
-                result1 = og_result_tab.to_pandas()
-                result1["star"] = x
-                result1["aspect_type"] = 'og'
-                psf_comparison_tab = pd.concat([psf_comparison_tab,
-                                                result1],
-                                               ignore_index=True)
+        og_result_tab = fit_gaussian_prf(og_stars[x].data)
+        if len(og_result_tab) != 0:
+            result1 = og_result_tab.to_pandas()
+            result1["star"] = x
+            result1["aspect_type"] = 'og'
+            psf_comparison_tab = pd.concat([psf_comparison_tab,
+                                            result1],
+                                           ignore_index=True)
         new_result_tab = fit_gaussian_prf(new_stars[x].data)
         if len(new_result_tab) != 0:
             result2 = new_result_tab.to_pandas()
@@ -82,7 +79,6 @@ def fit_gaussian_prf(image):
         niters=1,
         fitshape=(11, 11))
     result_tab = photometry(image=image)
-
     return result_tab
 
 
@@ -93,9 +89,9 @@ def get_good_stars(file_names):
     # these column names in the photom table only apply if the
     # tables were produced with the new image seg used in new
     # extraction branch of gphoton
-    photom_table = photom_table[photom_table['area'] > 16]
-    photom_table = photom_table[photom_table['area'] > 60]
-    photom_table = photom_table[photom_table['segment_flux'] > .5]
+    #photom_table = photom_table[photom_table['area'] > 16]
+    #photom_table = photom_table[photom_table['area'] > 60]
+    #photom_table = photom_table[photom_table['segment_flux'] > .5]
     stars_tbl = Table()
     stars_tbl['x'] = photom_table['xcentroid']
     stars_tbl['y'] = photom_table['ycentroid']
@@ -121,7 +117,7 @@ def cutout_stars(stars_tbl, imagefile):
     return stars
 
 
-def make_psf_plots(stars, file_names):
+def make_psf_plots(stars, file):
     """plot 25 of the star cutouts used for the psf fitting"""
     from numpy import random
     import matplotlib.pyplot as plt
@@ -135,5 +131,5 @@ def make_psf_plots(stars, file_names):
         ax[i].imshow(centile_clip(stars[i]), origin='lower', cmap='viridis')
         ax[i].set_yticklabels([])
         ax[i].set_xticklabels([])
-    plt.savefig(file_names['star_cutouts'])
+    plt.savefig(file)
     return
