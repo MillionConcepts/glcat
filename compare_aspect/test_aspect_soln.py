@@ -131,7 +131,7 @@ def write_aspect2(eclipse, file_names):
       read by gphoton, overwrites whatever is previously called
       aspect2.parquet in the gphoton aspect folder. adds time and flag
       info from og aspect."""
-    from pyarrow import parquet
+    import numpy as np
     # loading aspect table to add time stamp and flags
     if os.path.exists(file_names['new_aspect']):
         new_aspect_df = pd.read_csv(file_names['new_aspect'])
@@ -154,18 +154,28 @@ def write_aspect2(eclipse, file_names):
                                   "mission_time": "time",
                                   "flags_x": "flags"})
         df2 = df2.set_index('frame')
+        # for ValueError("cannot reindex on an axis with duplicate labels")
+        # idk if this should be a permanent solution or not
+        df2 = df2[~df2.index.duplicated()]
         df2 = df2.reindex(range(len(df2)), fill_value=0)
         df2 = df2.astype({'ra': 'float64',
                           'dec': 'float64',
                           'roll': 'float64',
                           'time': 'float64',
-                          'logodds': 'str',
-                          'flags': 'float64',
-                          'frame_type': 'str'})
+                          'logodds': 'float64',
+                          'flags': 'float64'})
+        # removed:
+        # ,
+        #                           'frame_type': 'str'
         print("Interpolating df")
-        #df2 = df2.interpolate(method='linear',
-        #                      limit_direction='both',
-        #                      axis=0)
+        df2 = df2.interpolate(method='polynomial', order=2,
+                              limit_direction='both',
+                              axis=0)
+        window_size = 5
+        df2['ra'] = np.convolve(df2['ra'], np.ones(window_size) / window_size, mode='valid')
+        df2['dec'] = np.convolve(df2['dec'], np.ones(window_size) / window_size, mode='valid')
+        df2['roll'] = np.convolve(df2['roll'], np.ones(window_size) / window_size, mode='valid')
+
         # save to parquet
         df2.to_parquet(file_names["aspect_parq"], compression=None)
     elif not os.path.exists(file_names['new_aspect']):

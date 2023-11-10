@@ -27,6 +27,7 @@ def run_psf_compare(file_names):
     make_psf_plots(new_stars, file_names['star_cutouts_new'])
     psf_comparison_tab = pd.DataFrame()
     for x in range(int(len(stars_tbl)*.15)):
+        print(x)
         # subject to change, this saves time right now
         og_result_tab = fit_gaussian_prf(og_stars[x].data)
         if len(og_result_tab) != 0:
@@ -55,6 +56,7 @@ def fit_gaussian_prf(image):
     from photutils.detection import IRAFStarFinder
     from photutils.psf import (DAOGroup, IntegratedGaussianPRF,
                                IterativelySubtractedPSFPhotometry)
+    print("hi")
     bkgrms = MADStdBackgroundRMS()
     std = bkgrms(image)
     iraffind = IRAFStarFinder(threshold=3.5 * std,
@@ -79,6 +81,7 @@ def fit_gaussian_prf(image):
         niters=1,
         fitshape=(11, 11))
     result_tab = photometry(image=image)
+    print(len(result_tab))
     return result_tab
 
 
@@ -89,9 +92,6 @@ def get_good_stars(file_names):
     # these column names in the photom table only apply if the
     # tables were produced with the new image seg used in new
     # extraction branch of gphoton
-    #photom_table = photom_table[photom_table['area'] > 16]
-    #photom_table = photom_table[photom_table['area'] > 60]
-    #photom_table = photom_table[photom_table['segment_flux'] > .5]
     stars_tbl = Table()
     stars_tbl['x'] = photom_table['xcentroid']
     stars_tbl['y'] = photom_table['ycentroid']
@@ -133,3 +133,5 @@ def make_psf_plots(stars, file):
         ax[i].set_xticklabels([])
     plt.savefig(file)
     return
+
+
