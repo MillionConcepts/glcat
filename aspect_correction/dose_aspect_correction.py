@@ -151,6 +151,46 @@ def astrometry_hostess_image_run(
         dec=dec,
         radius=5,
         temp_axy=True,
-        m="/tmp")
+        m="/tmp",
+        # added crpix_center
+        crpix_center=True)
     solve_process.wait()
     return solve_process.done
+
+
+def astrometry_hostess_image_run(
+        backplanepath,
+        output_path,
+        previous_wcs_path,
+        ra,
+        dec):
+    """--verify file
+    Try to verify an existing WCS file
+    --verify-ext extension
+    HDU from which to read WCS to verify; set this BEFORE --verify"""
+    print(f"running astrometry on image {backplanepath}")
+    solve_process = Viewer.from_command(
+        "solve-field",
+        backplanepath,
+        overwrite=True,
+        no_plots=True,
+        dir_=output_path,
+        scale_units="arcsecperpix",
+        scale_low=1.0,
+        scale_high=1.6,
+        N="none",
+        U="none",
+        B="none",
+        M="none",
+        R="none",
+        verify=previous_wcs_path,
+        ra=ra,
+        dec=dec,
+        radius=5,
+        temp_axy=True,
+        m="/tmp",
+        # added crpix_center
+        crpix_center=True)
+    solve_process.wait()
+    return solve_process.done
+
