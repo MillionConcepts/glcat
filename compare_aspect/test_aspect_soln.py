@@ -107,7 +107,7 @@ def get_file_names(eclipse, band, leg, og_folder, new_folder, root):
 
     file_names['psf_comp'] = og_folder + eclipse_str + f"psf_comp.csv"
     file_names['image_comparison'] = og_folder + eclipse_str + "-image-compare.jpg"
-    file_names['new_aspect'] = root + "test_data/aspect/" + eclipse_num + "_new_aspect.csv"
+    file_names['new_aspect'] = root + "test_data/aspect/" + eclipse_num + "_new_aspect_diff.csv"
     file_names['star_cutouts'] = results + eclipse_str + "-star-cutouts.jpg"
     file_names['star_cutouts_new'] = results + eclipse_str + "-star-cutouts-newasp.jpg"
 
@@ -147,6 +147,10 @@ def write_aspect2(eclipse, file_names):
         df2['eclipse'] = eclipse
         # have to rename columns to ra, dec, and roll
         # bc that's how og aspect parq is
+
+        # have to fix the roll!
+        df2['orientation'] = abs(df2['orientation'] + np.where(df2['orientation'] < 0, 360, 0))
+
         df2 = df2.rename(columns={"ra_center": "ra",
                                   "dec_center": "dec",
                                   "orientation": "roll",
@@ -163,18 +167,16 @@ def write_aspect2(eclipse, file_names):
                           'roll': 'float64',
                           'time': 'float64',
                           'logodds': 'float64',
-                          'flags': 'float64'})
-        # removed:
-        # ,
-        #                           'frame_type': 'str'
+                          'flags': 'float64',
+                          'frame_type': 'str'})
         print("Interpolating df")
         df2 = df2.interpolate(method='polynomial', order=2,
                               limit_direction='both',
                               axis=0)
-        window_size = 5
-        df2['ra'] = np.convolve(df2['ra'], np.ones(window_size) / window_size, mode='valid')
-        df2['dec'] = np.convolve(df2['dec'], np.ones(window_size) / window_size, mode='valid')
-        df2['roll'] = np.convolve(df2['roll'], np.ones(window_size) / window_size, mode='valid')
+        #window_size = 5
+        #df2['ra'] = np.convolve(df2['ra'], np.ones(window_size) / window_size, mode='valid')
+        #df2['dec'] = np.convolve(df2['dec'], np.ones(window_size) / window_size, mode='valid')
+        #df2['roll'] = np.convolve(df2['roll'], np.ones(window_size) / window_size, mode='valid')
 
         # save to parquet
         df2.to_parquet(file_names["aspect_parq"], compression=None)
