@@ -158,16 +158,13 @@ def astrometry_hostess_image_run(
     return solve_process.done
 
 
-def astrometry_hostess_image_run(
+# can't use when running in parallel bc previous wcs may not have been created
+"""def astrometry_hostess_image_run(
         backplanepath,
         output_path,
         previous_wcs_path,
         ra,
         dec):
-    """--verify file
-    Try to verify an existing WCS file
-    --verify-ext extension
-    HDU from which to read WCS to verify; set this BEFORE --verify"""
     print(f"running astrometry on image {backplanepath}")
     solve_process = Viewer.from_command(
         "solve-field",
@@ -192,5 +189,5 @@ def astrometry_hostess_image_run(
         # added crpix_center
         crpix_center=True)
     solve_process.wait()
-    return solve_process.done
+    return solve_process.done"""
 

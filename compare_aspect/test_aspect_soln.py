@@ -107,7 +107,7 @@ def get_file_names(eclipse, band, leg, og_folder, new_folder, root):
 
     file_names['psf_comp'] = og_folder + eclipse_str + f"psf_comp.csv"
     file_names['image_comparison'] = og_folder + eclipse_str + "-image-compare.jpg"
-    file_names['new_aspect'] = root + "test_data/aspect/" + eclipse_num + "_new_aspect_diff.csv"
+    file_names['new_aspect'] = root + "test_data/aspect/" + eclipse_num + "_new_aspect.csv"
     file_names['star_cutouts'] = results + eclipse_str + "-star-cutouts.jpg"
     file_names['star_cutouts_new'] = results + eclipse_str + "-star-cutouts-newasp.jpg"
 
