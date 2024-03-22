@@ -191,13 +191,14 @@ def load_for_xymap(photonfile, radius=400):
     imsz = (
         int((wcs.wcs.crpix[1] - 0.5) * 2), int((wcs.wcs.crpix[0] - 0.5) * 2)
     )
+    t = xytab['t'][0]
     components = {
         't': xytab['t'].to_numpy(),
         'x': xytab['row'].to_numpy() * 4,
         'y': xytab['col'].to_numpy() * 4,
         'foc': foc
     }
-    return components, wcs, imsz
+    return components, wcs, imsz, t
 
 
 def make_full_depth_xymaps(components, imsz):
