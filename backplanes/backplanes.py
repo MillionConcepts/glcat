@@ -28,7 +28,7 @@ from gPhoton.pretty import print_inline
 from gPhoton.reference import PipeContext
 from gPhoton.sharing import (reference_shared_memory_arrays)
 from gPhoton.vorpal import between
-from aspect_correction.dose_aspect_correction import get_stars
+#from aspect_correction.dose_aspect_correction import get_stars
 
 
 def stub_header(band, wcs=None, tranges=None):
