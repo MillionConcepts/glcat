@@ -85,6 +85,10 @@ def make_hotspot_files_eclipse(eclipse, band):
         with open("failed_gphoton_eclipses.csv", "a+") as stream:
             stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
+    if os.path.exists(f'/home/ubuntu/gPhoton2/test_data/temp'):
+        print("deleting temp folder from gphoton test data")
+        shutil.rmtree(f'/home/ubuntu/gPhoton2/test_data/temp')
+
     if os.path.exists(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}'):
         print("deleting failed folder from ec2")
         shutil.rmtree(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}')
