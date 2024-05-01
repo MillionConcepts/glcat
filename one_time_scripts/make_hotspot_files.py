@@ -2,7 +2,6 @@ import sys
 import os
 import shutil
 from backplanes import make_backplanes
-
 sys.path.append('/home/ubuntu/gPhoton2')
 from gPhoton.pipeline import execute_pipeline
 
@@ -62,7 +61,7 @@ def make_hotspot_files_eclipse(eclipse, band):
         except KeyboardInterrupt:
             raise
         except Exception as ex:
-            print(f"something didn't work :( for {eclipse} ")
+            print(f"failed backplane {eclipse} ")
             with open("failed_backplane_eclipses.csv", "a+") as stream:
                 stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
@@ -74,14 +73,14 @@ def make_hotspot_files_eclipse(eclipse, band):
             except KeyboardInterrupt:
                 raise
             except Exception as ex:
-                print(f"something didn't work :( for {eclipse} ")
+                print(f"failed transfer {eclipse} ")
                 with open("failed_transfer_eclipses.csv", "a+") as stream:
                     stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
     except KeyboardInterrupt:
         raise
     except Exception as ex:
-        print(f"something didn't work :( for {eclipse} ")
+        print(f"failed gphoton {eclipse} ")
         with open("failed_gphoton_eclipses.csv", "a+") as stream:
             stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
