@@ -61,13 +61,6 @@ def make_hotspot_files_eclipse(eclipse, band):
                 star_size=2,
                 snippet=None)
 
-        except KeyboardInterrupt:
-            raise
-        except Exception as ex:
-            print(f"failed backplane {eclipse} ")
-            with open("failed_backplane_eclipses.csv", "a+") as stream:
-                stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
-
             try:
                 dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', '/mnt/s3/')
                 print(f"moved folder of {pad_eclipse} to {dest}")
@@ -77,6 +70,13 @@ def make_hotspot_files_eclipse(eclipse, band):
                 print(f"failed transfer {eclipse} ")
                 with open("failed_transfer_eclipses.csv", "a+") as stream:
                     stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
+
+        except KeyboardInterrupt:
+            raise
+        except Exception as ex:
+            print(f"failed backplane {eclipse} ")
+            with open("failed_backplane_eclipses.csv", "a+") as stream:
+                stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
     except KeyboardInterrupt:
         raise
