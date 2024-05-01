@@ -2,21 +2,21 @@ if __name__ == "__main__":
     from backplanes import make_backplanes
 
     make_backplanes(
-        eclipse=23068,
+        eclipse=23346,
         band="NUV",
-        depth=25,
+        depth=3000,
         leg=0,
         threads=4,
         burst=True,
         # should be root path for eclipse directories where you've written
         # your photonlists; will also write files
         # there. recall photonlists must be written with extended metadata
-        local="/media/bekah/BekahA/backplane_widths",  # "/home/bekah/gPhoton2/test_data",
+        local= "/media/bekah/BekahA/backplane_widths",  #"/home/bekah/gPhoton2/test_data",
         # "xy" or "dose"
         kind="dose",
         # detector radius cutoff -- only matters for dosemaps. pop up to ~750
         # if you want the stims.
-        radius=750,
+        radius=700,
         # write arrays / xylists? (xylists relevant only for dosemaps)
         write={'array': True, 'xylist': False},
         # write arrays inline? possible only in burst mode.

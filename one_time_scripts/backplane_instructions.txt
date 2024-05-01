@@ -1,0 +1,52 @@
+Processing backplanes: 
+
+for each instance 
+
+make space: 
+
+cd /mnt 
+rm -r s3 
+
+
+update IAM role for bucket to backplane_test 
+
+check bucket is accessible via: aws s3 ls 
+
+modify backplane script: 
+- correct portion of eclipse list 
+- comment out raw6 deletion portion 
+
+to mount bucket: 
+
+sudo mkdir /mnt/s3 
+sudo chown -R ubuntu /mnt/s3 
+goofys backplanetest /mnt/s3 
+
+conda activate gphoton2
+
+ECLIPSES: 
+instance id / eclipses assigned, 3,000 eclipses each 
+i-0a6db94f616142719: 3010:6009 y 
+i-01d27b3b65976268e: 1-10, 6010:9009 y 
+i-0163af5ed3e55ef09: 9010:12009 y
+i-048681499945dd341: 12010:15009 y 
+i-008dac4bf45f641fd: 15010:18009 y 
+
+in the morning: 
+download failed eclipse files 
+check s3 bucket 
+
+
+(base) ubuntu@ip-172-31-67-102:~$ aws s3 ls
+2023-08-03 19:29:12 backplanetest
+2022-10-24 16:32:40 fake-bekah
+(base) ubuntu@ip-172-31-67-102:~$ sudo chown -R ubuntu /mnt/s3
+(base) ubuntu@ip-172-31-67-102:~$ goofys backplanetest /mnt/s3
+(base) ubuntu@ip-172-31-67-102:~$ conda activate gphoton2
+cd /(gphoton2) ubuntu@ip-172-31-67-102:~$ cd /home/ubuntu/glcat
+(gphoton2) ubuntu@ip-172-31-67-102:~/glcat$ nano make_backplanes_for_s3.py
+
+
+
+
+

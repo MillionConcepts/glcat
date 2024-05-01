@@ -1,0 +1,92 @@
+import sys
+import os
+import shutil
+from backplanes import make_backplanes
+
+sys.path.append('/home/ubuntu/gPhoton2')
+from gPhoton.pipeline import execute_pipeline
+
+
+def make_hotspot_files_eclipse(eclipse, band):
+    # gphoton run to produce extended photonlist
+    # modified aspect table must be called "aspect2" and be in the aspect folder of gPhoton2
+
+    # try to run gphoton
+    try:
+        execute_pipeline(
+            eclipse,
+            band,
+            depth=120,
+            # integer; None to deactivate (default None)
+            threads=4,
+            # where to both write output data and look for input data
+            local_root="/home/ubuntu/gPhoton2/test_data",
+            # auxiliary remote location for input data
+            # remote_root="/mnt/s3",
+            recreate=True,
+            # list of floats; relevant only to lightcurve / photometry portion
+            aperture_sizes=[12.8],
+            # actually write image/movie products? otherwise hold in memory but
+            # discard (possibly after performing photometry).
+            write={"movie": False, "image": False},
+            coregister_lightcurves=False,
+            # photonpipe, moviemaker, None (default None)
+            stop_after='photonpipe',
+            photometry_only=False,
+            # None, "gzip", "rice"
+            compression="rice",
+            # use array sparsification on movie frames?
+            lil=True,
+            # write movie frames as separate files
+            burst=False,
+            extended_photonlist=True)
+
+        # then try to make full depth backplane
+        try:
+            make_backplanes(
+                eclipse=eclipse,
+                band=band,
+                depth=3000,
+                leg=0,
+                threads=4,
+                burst=True,
+                local="/home/ubuntu/gPhoton2/test_data",
+                kind="dose",
+                radius=600,
+                write={'array': True, 'xylist': False},
+                inline=True,
+                threshold=.45,
+                star_size=2,
+                snippet=None)
+
+        except KeyboardInterrupt:
+            raise
+        except Exception as ex:
+            print(f"something didn't work :( for {eclipse} ")
+            with open("failed_backplane_eclipses.csv", "a+") as stream:
+                stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
+
+            try:
+                pad_eclipse = str(eclipse).zfill(5)
+                b = "n" if band == "NUV" else "f"
+                dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', '/mnt/s3/')
+                print(f"moved folder of {pad_eclipse} to {dest}")
+            except KeyboardInterrupt:
+                raise
+            except Exception as ex:
+                print(f"something didn't work :( for {eclipse} ")
+                with open("failed_transfer_eclipses.csv", "a+") as stream:
+                    stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
+
+    except KeyboardInterrupt:
+        raise
+    except Exception as ex:
+        print(f"something didn't work :( for {eclipse} ")
+        with open("failed_gphoton_eclipses.csv", "a+") as stream:
+            stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
+
+    if os.path.exists(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}'):
+        print("deleting failed folder from ec2")
+        shutil.rmtree(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}')
+
+    return
