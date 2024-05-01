@@ -11,6 +11,9 @@ def make_hotspot_files_eclipse(eclipse, band):
     # modified aspect table must be called "aspect2" and be in the aspect folder of gPhoton2
 
     # try to run gphoton
+    pad_eclipse = str(eclipse).zfill(5)
+    b = "n" if band == "NUV" else "f"
+
     try:
         execute_pipeline(
             eclipse,
@@ -66,8 +69,6 @@ def make_hotspot_files_eclipse(eclipse, band):
                 stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
             try:
-                pad_eclipse = str(eclipse).zfill(5)
-                b = "n" if band == "NUV" else "f"
                 dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', '/mnt/s3/')
                 print(f"moved folder of {pad_eclipse} to {dest}")
             except KeyboardInterrupt:
