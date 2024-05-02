@@ -13,7 +13,7 @@ update IAM role for bucket to backplane_test
 check bucket is accessible via: aws s3 ls 
 
 modify backplane script: 
-- correct portion of eclipse list 
+- correcst portion of eclipse list 
 - comment out raw6 deletion portion 
 
 to mount bucket: 

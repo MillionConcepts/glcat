@@ -110,7 +110,7 @@ def dosemap_frame(axes, radius=400, resolution=None):
     of the output array equal to 8 * radius.
     axes of returned array are col/row upscaled by 4.
     """
-    resolution = radius * 6 if resolution is None else radius
+    resolution = radius * 8 if resolution is None else radius
     return fh.histogram2d(
         axes['x'], axes['y'], bins=resolution, range=dosemap_ranges(radius)
     ).astype('float32')
