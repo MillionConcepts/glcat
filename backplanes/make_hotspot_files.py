@@ -4,7 +4,7 @@ import shutil
 from backplanes import make_backplanes
 sys.path.append('/home/ubuntu/gPhoton2')
 from gPhoton.pipeline import execute_pipeline
-
+import gc
 
 def make_hotspot_files_eclipse(eclipse, band):
     # gphoton run to produce extended photonlist
@@ -42,6 +42,7 @@ def make_hotspot_files_eclipse(eclipse, band):
             # write movie frames as separate files
             burst=False,
             extended_photonlist=True)
+        gc.collect()
 
         # then try to make full depth backplane
         try:
@@ -60,6 +61,7 @@ def make_hotspot_files_eclipse(eclipse, band):
                 threshold=.45,
                 star_size=2,
                 snippet=None)
+            gc.collect()
 
             try:
                 dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d')
