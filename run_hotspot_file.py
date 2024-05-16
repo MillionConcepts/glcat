@@ -5,10 +5,11 @@ if __name__ == "__main__":
     nuv_list = pd.read_csv("every3_fuv.csv")
 
     # Access the column as a pandas Series object
-    eclipses = nuv_list['eclipse']
+    eclipses = nuv_list['eclipse'][4458:]
 
     # Now, you can iterate through the values in the column_series
     for e in eclipses:
+        e = int(e)
         make_hotspot_files_eclipse(
             eclipse=e,
             band="FUV"

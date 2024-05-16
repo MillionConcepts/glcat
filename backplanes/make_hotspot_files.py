@@ -6,6 +6,7 @@ sys.path.append('/home/ubuntu/gPhoton2')
 from gPhoton.pipeline import execute_pipeline
 import gc
 
+
 def make_hotspot_files_eclipse(eclipse, band):
     # gphoton run to produce extended photonlist
     # modified aspect table must be called "aspect2" and be in the aspect folder of gPhoton2
