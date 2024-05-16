@@ -2,6 +2,9 @@ Processing backplanes:
 
 for each instance 
 
+to ssh in: 
+ssh -i /home/bekah/Downloads/astrom_test.pem ubuntu@3.81.23.95
+
 make space: 
 
 cd /mnt 
