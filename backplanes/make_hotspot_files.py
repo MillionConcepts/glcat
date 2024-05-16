@@ -21,7 +21,7 @@ def make_hotspot_files_eclipse(eclipse, band):
             band,
             depth=120,
             # integer; None to deactivate (default None)
-            threads=4,
+            threads=None,
             # where to both write output data and look for input data
             local_root="/home/ubuntu/gPhoton2/test_data",
             # auxiliary remote location for input data
