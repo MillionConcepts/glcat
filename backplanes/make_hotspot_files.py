@@ -19,7 +19,7 @@ def make_hotspot_files_eclipse(eclipse, band):
         execute_pipeline(
             eclipse,
             band,
-            depth=120,
+            depth=None,
             # integer; None to deactivate (default None)
             threads=None,
             # where to both write output data and look for input data
