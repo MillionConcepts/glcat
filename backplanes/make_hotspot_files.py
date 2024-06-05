@@ -65,7 +65,7 @@ def make_hotspot_files_eclipse(eclipse, band):
             gc.collect()
 
             try:
-                dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d')
+                dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d--NF')
                 print(f"moved folder of {pad_eclipse} to {dest}")
             except KeyboardInterrupt:
                 raise

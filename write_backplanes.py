@@ -2,8 +2,8 @@ if __name__ == "__main__":
     from backplanes import make_backplanes
 
     make_backplanes(
-        eclipse=23346,
-        band="NUV",
+        eclipse=19261,
+        band="FUV",
         depth=3000,
         leg=0,
         threads=4,
@@ -11,7 +11,7 @@ if __name__ == "__main__":
         # should be root path for eclipse directories where you've written
         # your photonlists; will also write files
         # there. recall photonlists must be written with extended metadata
-        local= "/media/bekah/BekahA/backplane_widths",  #"/home/bekah/gPhoton2/test_data",
+        local="/home/bekah/gPhoton2/test_data",
         # "xy" or "dose"
         kind="dose",
         # detector radius cutoff -- only matters for dosemaps. pop up to ~750
