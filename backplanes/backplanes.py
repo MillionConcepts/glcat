@@ -148,7 +148,10 @@ def write_xylist_inline(ctx, frame_ix, maps):
 
 
 def make_dosemap(ctx: PipeContext, radius: int = 400):
-    components, start_time = load_for_dosemap(ctx()['photonfile'], radius, ctx.snippet)
+    #TODO: change photonlist path back after FUV run
+    estring = str(ctx()['eclipse']).zfill(5)
+    file = f"/mnt/s3/e{estring}-fd--NF/e{estring}-fd-b00.parquet"
+    components, start_time = load_for_dosemap(file, radius, ctx.snippet) # ctx()['photonfile']
     if ctx.depth is None:
         maps = dosemap_frame(components, radius)
         if ctx.write['array'] is True:
