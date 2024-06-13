@@ -29,8 +29,8 @@ for e in eclipse_list:
                         print(f"adding eclipse {e}")
                         cumulative_image += data.astype(np.float64)
                         eclipse_counter = eclipse_counter + 1
-            except:
-                print("probably a corrupt fits file")
+            except Exception as ex:
+                print(f"probably a corrupt fits file, {ex}")
         else:
             print(f"dose map ({file_path}) does not exist")
 
