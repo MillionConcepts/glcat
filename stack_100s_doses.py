@@ -12,7 +12,7 @@ cumulative_image = None
 eclipse_counter = 0
 
 for e in eclipse_list:
-    while eclipse_counter <= 2000:
+    if eclipse_counter <= 2000:
         i = str(e).zfill(5)
         # for mounted backplanetest bucket
         file_path = f"/mnt/s3/e{i}-fd--NF/e{i}-fd-b00-f0100-t00000-g_dose.fits.gz"
@@ -25,6 +25,7 @@ for e in eclipse_list:
                 if cumulative_image is None:
                     cumulative_image = np.zeros_like(data, dtype=np.float64)
                 if data is not None:
+                    print(f"adding eclipse {e}")
                     cumulative_image += data.astype(np.float64)
                     eclipse_counter = eclipse_counter + 1
         else:
