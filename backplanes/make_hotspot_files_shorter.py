@@ -21,6 +21,7 @@ def make_hotspot_files_eclipse_shorter(eclipse, band):
         print(f"File {photonlist_path} exists.")
         # then try to make full depth backplane
         try:
+            print("running backplanes")
             make_backplanes(
                 eclipse=eclipse,
                 band=band,

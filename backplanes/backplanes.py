@@ -380,6 +380,7 @@ def make_backplanes(
         stop_after=stop_after,
         snippet=snippet
     )
+    print(ctx)
     # TODO: consider propagating this little hack upstream
     ctx.hdu_constructor_kwargs = dict(ctx.hdu_constructor_kwargs)
     ctx.inline = inline
@@ -389,6 +390,7 @@ def make_backplanes(
     if kind == "xy":
         return make_xymaps(ctx)
     elif kind == "dose":
+        print('running dosemap')
         return make_dosemap(ctx, radius)
     raise ValueError("unrecognized backplane type")
 
