@@ -256,6 +256,10 @@ def write_backplane_file(
     image, ctx, start_time, tranges=None, wcs=None, name="", frame="movie", time_stamp=0):
     if frame == 'image':
         fn = ctx()['image']
+        #TODO: get rid of this replacement after fuv run
+        estring = str(ctx.eclipse).zfill(5)
+        fn = fn.replace(f'e{estring}/', '')
+
     else:
         #fNNNNdd_tNNNNdd
         fn = ctx(frame=frame)['movie']
