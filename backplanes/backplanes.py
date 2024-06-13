@@ -149,8 +149,7 @@ def write_xylist_inline(ctx, frame_ix, maps):
 
 def make_dosemap(ctx: PipeContext, radius: int = 400):
     #TODO: change photonlist path back after FUV run
-    estring = str(ctx()['eclipse']).zfill(5)
-    print(estring)
+    estring = str(ctx.eclipse).zfill(5)
     file = f"/mnt/s3/e{estring}-fd--NF/e{estring}-fd-b00.parquet"
     components, start_time = load_for_dosemap(file, radius, ctx.snippet) # ctx()['photonfile']
     if ctx.depth is None:
@@ -380,7 +379,6 @@ def make_backplanes(
         stop_after=stop_after,
         snippet=snippet
     )
-    print(ctx)
     # TODO: consider propagating this little hack upstream
     ctx.hdu_constructor_kwargs = dict(ctx.hdu_constructor_kwargs)
     ctx.inline = inline
