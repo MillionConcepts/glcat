@@ -44,7 +44,8 @@ def make_hotspot_files_eclipse_shorter(eclipse, band):
         except KeyboardInterrupt:
             raise
         except Exception as ex:
-            print(f"failed {eclipse}, {ex}")
+            print(ex)
+            print(f"failed {eclipse}")
 
     if os.path.exists(f'/home/ubuntu/gPhoton2/test_data/temp'):
         print("deleting temp folder from gphoton test data")
