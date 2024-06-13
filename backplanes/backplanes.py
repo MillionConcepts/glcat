@@ -263,6 +263,10 @@ def write_backplane_file(
     else:
         #fNNNNdd_tNNNNdd
         fn = ctx(frame=frame)['movie']
+
+        estring = str(ctx.eclipse).zfill(5)
+        fn = fn.replace(f'e{estring}/', '')
+
         split_time = str(time_stamp).split('.')
         N = split_time[0].zfill(4)
         # first 4 of decimal place
