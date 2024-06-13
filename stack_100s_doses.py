@@ -16,13 +16,16 @@ for e in eclipse_list:
         i = str(e).zfill(5)
         # for mounted backplanetest bucket
         file_path = f"/mnt/s3/e{i}-fd--NF/e{i}-fd-b00-f0100-t00000-g_dose.fits.gz"
+
         if os.path.isfile(file_path):
             with fits.open(file_path) as hdul:
                 data = hdul[0].data
                 if data is None:
                     print("no data")
+                if cumulative_image is None:
+                    cumulative_image = np.zeros_like(data, dtype=np.float64)
                 if data is not None:
-                    cumulative_image += data
+                    cumulative_image += data.astype(np.float64)
                     eclipse_counter = eclipse_counter + 1
         else:
             print(f"dose map ({file_path}) does not exist")
