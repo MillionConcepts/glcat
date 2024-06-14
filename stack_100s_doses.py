@@ -27,7 +27,7 @@ for e in eclipse_list:
                         cumulative_image = np.zeros_like(data, dtype=np.float64)
                     if data is not None:
                         print(f"adding eclipse {e}, spot {eclipse_counter}")
-                        data[data > 2] = 0
+                        data[data > 1] = 0
                         cumulative_image += data.astype(np.float64)
                         eclipse_counter = eclipse_counter + 1
             except Exception as ex:
@@ -37,7 +37,7 @@ for e in eclipse_list:
 
 hdu = fits.PrimaryHDU(cumulative_image)
 hdul = fits.HDUList([hdu])
-combo_filename = "/mnt/s3/fuv_2500stack_filtered.fits"
+combo_filename = "/mnt/s3/fuv_2500stack_filtered1.fits"
 hdul.writeto(combo_filename, overwrite=True)
 
 print(f"Stacked FITS file '{combo_filename}' has been saved.")
