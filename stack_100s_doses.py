@@ -12,7 +12,7 @@ cumulative_image = None
 eclipse_counter = 0
 file = 0
 for e in eclipse_list:
-    if eclipse_counter <= 1000:
+    if eclipse_counter <= 2500:
         i = str(e).zfill(5)
         # for mounted backplanetest bucket
         file_path = f"/mnt/s3/e{i}-fd--NF/e{i}-fd-b00-f0100-t00000-g_dose.fits.gz"
@@ -37,7 +37,7 @@ for e in eclipse_list:
 
 hdu = fits.PrimaryHDU(cumulative_image)
 hdul = fits.HDUList([hdu])
-combo_filename = "/mnt/s3/fuv_2000stack_filtered.fits"
+combo_filename = "/mnt/s3/fuv_2500stack_filtered.fits"
 hdul.writeto(combo_filename, overwrite=True)
 
 print(f"Stacked FITS file '{combo_filename}' has been saved.")
