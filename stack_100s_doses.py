@@ -10,9 +10,9 @@ eclipse_list = fuv['eclipse'][0:]
 
 cumulative_image = None
 eclipse_counter = 0
-
+file = 0
 for e in eclipse_list:
-    if eclipse_counter <= 2000:
+    if eclipse_counter <= 1000:
         i = str(e).zfill(5)
         # for mounted backplanetest bucket
         file_path = f"/mnt/s3/e{i}-fd--NF/e{i}-fd-b00-f0100-t00000-g_dose.fits.gz"
@@ -26,7 +26,8 @@ for e in eclipse_list:
                     if cumulative_image is None:
                         cumulative_image = np.zeros_like(data, dtype=np.float64)
                     if data is not None:
-                        print(f"adding eclipse {e}")
+                        print(f"adding eclipse {e}, spot {eclipse_counter}")
+                        data[data > 2] = 0
                         cumulative_image += data.astype(np.float64)
                         eclipse_counter = eclipse_counter + 1
             except Exception as ex:
@@ -36,7 +37,7 @@ for e in eclipse_list:
 
 hdu = fits.PrimaryHDU(cumulative_image)
 hdul = fits.HDUList([hdu])
-combo_filename = "/mnt/s3/fuv_2000stack_100seceach.fits"
+combo_filename = "/mnt/s3/fuv_2000stack_filtered.fits"
 hdul.writeto(combo_filename, overwrite=True)
 
 print(f"Stacked FITS file '{combo_filename}' has been saved.")
