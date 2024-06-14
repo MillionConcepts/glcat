@@ -5,18 +5,17 @@ from astropy.io import fits
 import pandas as pd
 
 
-fuv = pd.read_csv("every3_fuv.csv")
+fuv = pd.read_csv("nuv_no_ngs.csv")
 eclipse_list = fuv['eclipse'][0:]
 
 cumulative_image = None
 eclipse_counter = 0
 file = 0
 for e in eclipse_list:
-    if eclipse_counter <= 2500:
+    if eclipse_counter <= 2000:
         i = str(e).zfill(5)
         # for mounted backplanetest bucket
-        file_path = f"/mnt/s3/e{i}-fd--NF/e{i}-fd-b00-f0100-t00000-g_dose.fits.gz"
-
+        file_path = f"/mnt/s3/e{i}-nd/e{i}-nd-b00-f3000-t00000-g_dose.fits.gz"
         if os.path.isfile(file_path):
             try:
                 with fits.open(file_path) as hdul:
@@ -27,7 +26,7 @@ for e in eclipse_list:
                         cumulative_image = np.zeros_like(data, dtype=np.float64)
                     if data is not None:
                         print(f"adding eclipse {e}, spot {eclipse_counter}")
-                        data[data > 1] = 0
+                        data[data > 3] = 0
                         cumulative_image += data.astype(np.float64)
                         eclipse_counter = eclipse_counter + 1
             except Exception as ex:
@@ -37,7 +36,7 @@ for e in eclipse_list:
 
 hdu = fits.PrimaryHDU(cumulative_image)
 hdul = fits.HDUList([hdu])
-combo_filename = "/mnt/s3/fuv_2500stack_filtered1.fits"
+combo_filename = "/mnt/s3/nuv_2000stack_filtered3.fits"
 hdul.writeto(combo_filename, overwrite=True)
 
 print(f"Stacked FITS file '{combo_filename}' has been saved.")
