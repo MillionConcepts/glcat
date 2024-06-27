@@ -4,7 +4,7 @@ if __name__ == "__main__":
     import gc
 
 
-    elist = pd.read_csv("nuv_1000e.csv")
+    elist = pd.read_csv("fuv_1000e.csv")
 
     # Access the column as a pandas Series object
     eclipses = elist['eclipse'][0:]
@@ -14,6 +14,6 @@ if __name__ == "__main__":
         e = int(e)
         gphoton_only(
             eclipse=e,
-            band="NUV"
+            band="FUV"
         )
         gc.collect()
