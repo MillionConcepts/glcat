@@ -64,21 +64,21 @@ def gphoton_only(eclipse, band):
                 snippet=None)
             gc.collect()
 
-            try:
-                dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d-WD')
-                print(f"moved folder of {pad_eclipse} to {dest}")
-            except KeyboardInterrupt:
-                raise
-            except Exception as ex:
-                print(f"failed transfer {eclipse} ")
-                with open("failed_transfer_eclipses.csv", "a+") as stream:
-                    stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
-
         except KeyboardInterrupt:
             raise
         except Exception as ex:
             print(f"failed backplane {eclipse} ")
             with open("failed_backplane_eclipses.csv", "a+") as stream:
+                stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
+
+        try:
+            dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d-WD')
+            print(f"moved folder of {pad_eclipse} to {dest}")
+        except KeyboardInterrupt:
+            raise
+        except Exception as ex:
+            print(f"failed transfer {eclipse} ")
+            with open("failed_transfer_eclipses.csv", "a+") as stream:
                 stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
     except KeyboardInterrupt:
