@@ -1,0 +1,7 @@
+name: mcat
+channels:
+  - conda-forge
+dependencies:
+  - pdr
+  - hostess
+  - pyarrow
