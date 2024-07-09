@@ -88,9 +88,9 @@ def convert_mcats(
         return warncols
     except Exception as ex:
         with open(logfile, "a") as stream:
+            sanitized = f",{str(ex).replace('\n', '_').replace(',', '_')}\n "
             stream.write(
-                f"failure,{Path(name).name}"
-                f",{str(ex).replace('\n','_').replace(',','_')}\n"
+                f"failure,{Path(name).name},{sanitized}"
             )
         raise
     finally:
