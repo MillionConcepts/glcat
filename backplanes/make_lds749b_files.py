@@ -14,6 +14,7 @@ def gphoton_only(eclipse, band):
     pad_eclipse = str(eclipse).zfill(5)
     b = "n" if band == "NUV" else "f"
 
+
     try:
         print(f"running gphoton2 on eclipse {pad_eclipse} with new mask")
         execute_pipeline(
@@ -72,7 +73,7 @@ def gphoton_only(eclipse, band):
                 stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
         try:
-            dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d-WD')
+            dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d-nm')
             print(f"moved folder of {pad_eclipse} to {dest}")
         except KeyboardInterrupt:
             raise
