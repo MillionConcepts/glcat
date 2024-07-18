@@ -73,7 +73,7 @@ def gphoton_only(eclipse, band):
                 stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
         try:
-            dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d-fin')
+            dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d-lds749b')
             print(f"moved folder of {pad_eclipse} to {dest}")
         except KeyboardInterrupt:
             raise

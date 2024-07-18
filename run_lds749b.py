@@ -3,7 +3,7 @@ if __name__ == "__main__":
     import pandas as pd
     import gc
 
-    elist = pd.read_csv("masks/drawn/100eclipses.csv")
+    elist = pd.read_csv("flats/lds749b.csv")
 
     # Access the column as a pandas Series object
     eclipses = elist['eclipse'][0:]
