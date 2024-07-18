@@ -1,7 +1,7 @@
 import sys
 import os
 import shutil
-from backplanes import make_backplanes
+#from backplanes import make_backplanes
 sys.path.append('/home/ubuntu/gPhoton2')
 from gPhoton.pipeline import execute_pipeline
 import gc
@@ -46,31 +46,31 @@ def gphoton_only(eclipse, band):
             extended_photonlist=True)
         gc.collect()
 
-        # then try to make full depth backplane
-        try:
-            make_backplanes(
-                eclipse=eclipse,
-                band=band,
-                depth=1000,
-                leg=0,
-                threads=4,
-                burst=True,
-                local="/home/ubuntu/gPhoton2/test_data",
-                kind="dose",
-                radius=600,
-                write={'array': True, 'xylist': False},
-                inline=True,
-                threshold=.45,
-                star_size=2,
-                snippet=None)
-            gc.collect()
-
-        except KeyboardInterrupt:
-            raise
-        except Exception as ex:
-            print(f"failed backplane {eclipse} ")
-            with open("failed_backplane_eclipses.csv", "a+") as stream:
-                stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
+        # # then try to make full depth backplane
+        # try:
+        #     make_backplanes(
+        #         eclipse=eclipse,
+        #         band=band,
+        #         depth=1000,
+        #         leg=0,
+        #         threads=4,
+        #         burst=True,
+        #         local="/home/ubuntu/gPhoton2/test_data",
+        #         kind="dose",
+        #         radius=600,
+        #         write={'array': True, 'xylist': False},
+        #         inline=True,
+        #         threshold=.45,
+        #         star_size=2,
+        #         snippet=None)
+        #     gc.collect()
+        #
+        # except KeyboardInterrupt:
+        #     raise
+        # except Exception as ex:
+        #     print(f"failed backplane {eclipse} ")
+        #     with open("failed_backplane_eclipses.csv", "a+") as stream:
+        #         stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
         try:
             dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d-lds749b')
