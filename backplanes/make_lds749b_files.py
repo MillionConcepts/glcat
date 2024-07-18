@@ -40,10 +40,11 @@ def gphoton_only(eclipse, band):
             # None, "gzip", "rice"
             compression="rice",
             # use array sparsification on movie frames?
-            lil=True,
+            lil=True
             # write movie frames as separate files
-            burst=False,
-            extended_photonlist=True)
+            #burst=False,
+            #extended_photonlist=True
+            )
         gc.collect()
 
         # # then try to make full depth backplane
