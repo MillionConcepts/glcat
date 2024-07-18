@@ -89,6 +89,15 @@ def gphoton_only(eclipse, band):
         print(f"failed gphoton {eclipse} ")
         with open("failed_gphoton_eclipses.csv", "a+") as stream:
             stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
+        try:
+            dest = shutil.move(f'/home/ubuntu/gPhoton2/test_data/e{pad_eclipse}', f'/mnt/s3/e{pad_eclipse}-{b}d-lds749b')
+            print(f"moved folder of {pad_eclipse} to {dest}")
+        except KeyboardInterrupt:
+            raise
+        except Exception as ex:
+            print(f"failed transfer {eclipse} ")
+            with open("failed_transfer_eclipses.csv", "a+") as stream:
+                stream.write(f"{eclipse},{str(ex).replace(',', '')}\n")
 
     if os.path.exists(f'/home/ubuntu/gPhoton2/test_data/temp'):
         print("deleting temp folder from gphoton test data")
