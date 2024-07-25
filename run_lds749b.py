@@ -13,6 +13,6 @@ if __name__ == "__main__":
         e = int(e)
         gphoton_only(
             eclipse=e,
-            band="NUV"
+            band="FUV"
         )
         gc.collect()
