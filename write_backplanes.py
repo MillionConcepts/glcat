@@ -2,8 +2,8 @@ if __name__ == "__main__":
     from backplanes import make_backplanes
 
     make_backplanes(
-        eclipse=19261,
-        band="FUV",
+        eclipse=23456,
+        band="NUV",
         depth=3000,
         leg=0,
         threads=4,
@@ -16,7 +16,7 @@ if __name__ == "__main__":
         kind="dose",
         # detector radius cutoff -- only matters for dosemaps. pop up to ~750
         # if you want the stims.
-        radius=700,
+        radius=600,
         # write arrays / xylists? (xylists relevant only for dosemaps)
         write={'array': True, 'xylist': False},
         # write arrays inline? possible only in burst mode.
