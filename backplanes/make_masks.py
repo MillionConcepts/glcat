@@ -17,10 +17,21 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
         try:
             # get photonlist from bucket
             print("reading photonlist")
-            nf = parquet.read_table(photonlist,
-                                    columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
 
-            print(len(nf))
+            parquet_file = pq.ParquetFile(photonlist)
+            nrows = parquet_file.metadata.num_rows
+            if nrows > 20000000:
+                n = int(nrows / 20000000)
+            else:
+                n = 1
+            nf = pd.DataFrame()
+
+            #nf = parquet.read_table(photonlist,
+            #                        columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()\
+            for chunk in pd.read_parquet(photonlist,
+                                         columns=['col', 'row', 'ra', 'dec', 't'],
+                                         chunksize=n):
+                nf = pd.concat([nf, chunk.iloc[::0]])
 
             nf['row_rnd'] = nf['row'].round().astype(int)
             nf['col_rnd'] = nf['col'].round().astype(int)
