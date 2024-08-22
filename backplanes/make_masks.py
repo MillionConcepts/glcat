@@ -11,8 +11,8 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
     # use existing photonlists to make individual hotspot and coldspot masks
     # per eclipse band
 
-    photonlist = savepath + photonlist_path
-
+    photonlist = str(savepath + photonlist_path)
+    print(photonlist)
     if os.path.exists(photonlist):
         try:
             # get photonlist from bucket
