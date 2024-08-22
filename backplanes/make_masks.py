@@ -99,7 +99,7 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
 
 
 def filter_parquet_with_iter_batches(file_path, batch_size):
-    parquet_file = pq.ParquetFile(file_path)
+    parquet_file = parquet.ParquetFile(file_path)
     for batch in parquet_file.iter_batches(batch_size=batch_size):
         df = batch.to_pandas()
         filtered_df = df.iloc[[0]] if not df.empty else pd.DataFrame()
