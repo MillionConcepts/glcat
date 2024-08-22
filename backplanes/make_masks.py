@@ -18,7 +18,7 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
             # get photonlist from bucket
             print("reading photonlist")
 
-            parquet_file = pq.ParquetFile(photonlist)
+            parquet_file = parquet.ParquetFile(photonlist)
             nrows = parquet_file.metadata.num_rows
             if nrows > 20000000:
                 n = int(nrows / 20000000)
