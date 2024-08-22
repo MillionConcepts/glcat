@@ -10,7 +10,7 @@ if __name__ == "__main__":
     # band
     band = "n"
 
-    savepath = '~/mnt/s3/'
+    savepath = '/mnt/s3/'
 
     nbins = 800 # works a little better than 800
 
