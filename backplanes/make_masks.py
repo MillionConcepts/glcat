@@ -14,8 +14,10 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
     if os.path.exists(photonlist_path):
         try:
             # get photonlist from bucket
-            nf = parquet.read_table(photonlist_path,
+            nf = parquet.read_table(savepath+photonlist_path,
                                     columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
+
+            print(len(nf))
 
             nf['row_rnd'] = nf['row'].round().astype(int)
             nf['col_rnd'] = nf['col'].round().astype(int)
@@ -51,17 +53,19 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
 
             # saving hotspot mask per eclipse and band
             hmask[density_mask & disp_mask] = 0
-            hmask.tofile(f'{savepath}e{eclipse}-{band}d-hmask.bin')
+            hmask.tofile(f'{savepath}{eclipse}-{band}d-hmask.bin')
 
             # saving coldspot mask per eclipse and band
             cmask[dark_mask] = 0
-            cmask.tofile(f'{savepath}e{eclipse}-{band}d-cmask.bin')
+            cmask.tofile(f'{savepath}{eclipse}-{band}d-cmask.bin')
 
         except KeyboardInterrupt:
             raise
         except Exception as ex:
             print(ex)
             print(f"failed {eclipse}")
+    else:
+        print("fail!")
 
     gc.collect()
 
