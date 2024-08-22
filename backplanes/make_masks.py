@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import pyarrow.parquet as parquet
 
+
 def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
     # use existing photonlists to make individual hotspot and coldspot masks
     # per eclipse band
@@ -26,12 +27,15 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
                 n = 1
             nf = pd.DataFrame()
 
+            for chunk in filter_parquet_with_iter_batches(photonlist, n):
+                nf = pd.concat([nf, chunk])
+
             #nf = parquet.read_table(photonlist,
             #                        columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()\
-            for chunk in pd.read_parquet(photonlist,
-                                         columns=['col', 'row', 'ra', 'dec', 't'],
-                                         chunksize=n):
-                nf = pd.concat([nf, chunk.iloc[::0]])
+            #for chunk in pd.read_parquet(photonlist,
+            #                             columns=['col', 'row', 'ra', 'dec', 't'],
+            #                             chunksize=n):
+           #     nf = pd.concat([nf, chunk.iloc[::0]])
 
             nf['row_rnd'] = nf['row'].round().astype(int)
             nf['col_rnd'] = nf['col'].round().astype(int)
@@ -92,3 +96,11 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
     gc.collect()
 
     return
+
+
+def filter_parquet_with_iter_batches(file_path, batch_size):
+    parquet_file = pq.ParquetFile(file_path)
+    for batch in parquet_file.iter_batches(batch_size=batch_size):
+        df = batch.to_pandas()
+        filtered_df = df.iloc[[0]] if not df.empty else pd.DataFrame()
+        yield filtered_df
