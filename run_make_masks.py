@@ -5,7 +5,7 @@ if __name__ == "__main__":
     import time
 
     paths = pd.read_csv("~/glcat/notebooks/masks_flats/photonfile_keys.csv")
-    eclipses = nuv_list['parq_keys'][0:]
+    eclipses = paths['parq_keys'][0:]
 
     # band
     band = "n"
@@ -14,7 +14,7 @@ if __name__ == "__main__":
 
     nbins = 800 # works a little better than 800
 
-    for photonlist_path in paths:
+    for photonlist_path in eclipses:
         print(f"running {photonlist_path}")
         start_time = time.time()
 
