@@ -98,11 +98,7 @@ def filter_parquet_with_iter_batches(file_path, batch_size):
     while counter < 1:
         # there might be a better way to do this since I only want one really big chunk
         for batch in parquet_file.iter_batches(columns=['col', 'row', 'ra', 'dec', 't'],
-                                               batch_size=batch_size,
-                                               filters=[('col', '<=', 800),
-                                                        ('row', '<=', 800),
-                                                        ('col', '>=', -50),
-                                                        ('row', '>=', -50)]):
+                                               batch_size=batch_size):
             df = batch.to_pandas()
             counter = counter + 1
             yield df
