@@ -20,7 +20,7 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
             print("reading photonlist")
 
             photonlist = parquet.ParquetFile(photon_file)
-            nf = photonlist.read_row_groups([1],columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
+            nf = photonlist.read_row_groups([0],columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
             print(len(nf))
 
             nf['row_rnd'] = nf['row'].round().astype(int)
