@@ -20,56 +20,59 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
             print("reading photonlist")
 
             photonlist = parquet.ParquetFile(photon_file)
-            nf = photonlist.read_row_groups([0],columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
-            print(len(nf))
+            if photonlist.metadata.num_rows < 40000000: # kind of an arbitrary cutoff
 
-            nf['row_rnd'] = nf['row'].round().astype(int)
-            nf['col_rnd'] = nf['col'].round().astype(int)
+                nf = photonlist.read_row_groups([0],columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
+                print(len(nf))
 
-            print("filtering photonlist")
-            # filtering photonlist for on detector
-            nf = nf[(nf['col_rnd'] < 800) & (nf['row_rnd'] < 800)
-                    & (nf['ra'] != 0) & (nf['dec'] != 0)
-                    & (nf['col_rnd'] >= -50) & (nf['row_rnd'] >= -50)]
-            mask = pd.notna(nf['ra'])
-            nf = nf[mask]
+                nf['row_rnd'] = nf['row'].round().astype(int)
+                nf['col_rnd'] = nf['col'].round().astype(int)
 
-            print("calculating expt")
-            # rough approx not accounting for dead time
-            expt = nf.iloc[len(nf) - 1]['t'] - nf.iloc[0]['t']
+                print("filtering photonlist")
+                # filtering photonlist for on detector
+                nf = nf[(nf['col_rnd'] < 800) & (nf['row_rnd'] < 800)
+                        & (nf['ra'] != 0) & (nf['dec'] != 0)
+                        & (nf['col_rnd'] >= -50) & (nf['row_rnd'] >= -50)]
+                mask = pd.notna(nf['ra'])
+                nf = nf[mask]
 
-            print("quickbinning")
-            # std dev of ra and dec by col and row
-            ra_stdev = bin2d(nf['col'], nf['row'], nf['ra'], 'std', nbins)
-            dec_stdev = bin2d(nf['col'], nf['row'], nf['dec'], 'std', nbins)
+                print("calculating expt")
+                # rough approx not accounting for dead time
+                expt = nf.iloc[len(nf) - 1]['t'] - nf.iloc[0]['t']
 
-            # photon count per bin
-            count = bin2d(nf['col'], nf['row'], nf['ra'], 'count', nbins)
-            count = count / expt
+                print("quickbinning")
+                # std dev of ra and dec by col and row
+                ra_stdev = bin2d(nf['col'], nf['row'], nf['ra'], 'std', nbins)
+                dec_stdev = bin2d(nf['col'], nf['row'], nf['dec'], 'std', nbins)
 
-            print("masking binned data")
-            # density mask
-            density_mask = count >= .9
-            # dispersion mask
-            disp_mask = ra_stdev + dec_stdev > .014
-            # response map
-            dark_mask = count <= .015
+                # photon count per bin
+                count = bin2d(nf['col'], nf['row'], nf['ra'], 'count', nbins)
+                count = count / expt
 
-            print("making new masks")
-            # empty masks
-            hmask = np.ones(count.shape, dtype=bool)
-            cmask = np.ones(count.shape, dtype=bool)
+                print("masking binned data")
+                # density mask
+                density_mask = count >= .9
+                # dispersion mask
+                disp_mask = ra_stdev + dec_stdev > .014
+                # response map
+                dark_mask = count <= .015
 
-            # saving hotspot mask per eclipse and band
-            hmask[density_mask & disp_mask] = 0
-            print("saving hotspot mask")
-            hmask.tofile(f'{savepath}{eclipse}-{band}d-hmask.bin')
+                print("making new masks")
+                # empty masks
+                hmask = np.ones(count.shape, dtype=bool)
+                cmask = np.ones(count.shape, dtype=bool)
 
-            # saving coldspot mask per eclipse and band
-            cmask[dark_mask] = 0
-            print("saving coldspot mask")
-            cmask.tofile(f'{savepath}{eclipse}-{band}d-cmask.bin')
+                # saving hotspot mask per eclipse and band
+                hmask[density_mask & disp_mask] = 0
+                print("saving hotspot mask")
+                hmask.tofile(f'{savepath}{eclipse}-{band}d-hmask.bin')
 
+                # saving coldspot mask per eclipse and band
+                cmask[dark_mask] = 0
+                print("saving coldspot mask")
+                cmask.tofile(f'{savepath}{eclipse}-{band}d-cmask.bin')
+            else:
+                print("photonlist too big")
         except KeyboardInterrupt:
             raise
         except Exception as ex:
@@ -83,11 +86,3 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
 
     return
 
-
-def filter_parquet_with_iter_batches(file_path, batch_size):
-    parquet_file = parquet.ParquetFile(file_path)
-    # there might be a better way to do this since I only want one really big chunk
-    batch =  next(parquet_file.iter_batches(columns=['col', 'row', 'ra', 'dec', 't'],
-                                               batch_size=batch_size))
-    df = batch.to_pandas()
-    yield df
