@@ -28,6 +28,7 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
             nf = pd.DataFrame()
 
             for chunk in filter_parquet_with_iter_batches(photonlist, n):
+                print("adding chunk")
                 nf = pd.concat([nf, chunk])
 
             #nf = parquet.read_table(photonlist,
@@ -50,10 +51,10 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
 
             print("calculating expt")
             # rough approx not accounting for dead time
-            expt = nf.iloc[len(nf) - 1]['t'] - nf.iloc[0]['t']
+            expt = nf.iloc[len(nf) - 1]['t'] - nf.iloc[0]['t']/n
 
             print("quickbinning")
-            # std dev of ra and dec by col and row w
+            # std dev of ra and dec by col and row
             ra_stdev = bin2d(nf['col'], nf['row'], nf['ra'], 'std', nbins)
             dec_stdev = bin2d(nf['col'], nf['row'], nf['dec'], 'std', nbins)
 
@@ -100,7 +101,12 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
 
 def filter_parquet_with_iter_batches(file_path, batch_size):
     parquet_file = parquet.ParquetFile(file_path)
-    for batch in parquet_file.iter_batches(batch_size=batch_size):
+    for batch in parquet_file.iter_batches(columns=['col', 'row', 'ra', 'dec', 't'],
+                                           batch_size=batch_size,
+                                           filters=[('col', '<=', 800),
+                                                    ('row', '<=', 800),
+                                                    ('col', '>=', -50),
+                                                    ('row', '>=', -50)])
         df = batch.to_pandas()
         filtered_df = df.iloc[[0]] if not df.empty else pd.DataFrame()
         yield filtered_df
