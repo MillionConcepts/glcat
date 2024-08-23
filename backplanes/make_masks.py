@@ -93,7 +93,7 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
 def filter_parquet_with_iter_batches(file_path, batch_size):
     parquet_file = parquet.ParquetFile(file_path)
     # there might be a better way to do this since I only want one really big chunk
-    for batch in parquet_file.iter_batches(columns=['col', 'row', 'ra', 'dec', 't'],
-                                               batch_size=batch_size):
-        df = batch.to_pandas()
-        yield df
+    batch =  next(parquet_file.iter_batches(columns=['col', 'row', 'ra', 'dec', 't'],
+                                               batch_size=batch_size))
+    df = batch.to_pandas()
+    yield df
