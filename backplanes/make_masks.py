@@ -106,7 +106,7 @@ def filter_parquet_with_iter_batches(file_path, batch_size):
                                            filters=[('col', '<=', 800),
                                                     ('row', '<=', 800),
                                                     ('col', '>=', -50),
-                                                    ('row', '>=', -50)])
+                                                    ('row', '>=', -50)]):
         df = batch.to_pandas()
         filtered_df = df.iloc[[0]] if not df.empty else pd.DataFrame()
         yield filtered_df
