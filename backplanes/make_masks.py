@@ -17,12 +17,13 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
     if os.path.exists(photon_file):
         try:
             # get photonlist from bucket
-            print("reading photonlist")
             photonlist = parquet.ParquetFile(photon_file)
             if photonlist.metadata.num_rows < 40000000: # kind of an arbitrary cutoff
-
+                print("reading photonlist")
+                # the current photonlists I'm using only have one row group but
+                # this will be more relevant in the future when I have more and want
+                # to use less points for big photonlists
                 nf = photonlist.read_row_groups([0],columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
-                print(len(nf))
 
                 nf['row_rnd'] = nf['row'].round().astype(int)
                 nf['col_rnd'] = nf['col'].round().astype(int)
@@ -35,15 +36,15 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
                 mask = pd.notna(nf['ra'])
                 nf = nf[mask]
 
-                print("calculating expt")
+                print("calculating expt & adding edge points")
                 # rough approx not accounting for dead time
                 expt = nf.iloc[len(nf) - 1]['t'] - nf.iloc[0]['t']
 
+                # adding edge points, have 'real' values from photonlist to
+                # not mess with the stats too much
                 ra = nf.iloc[0]['ra']
                 dec = nf.iloc[0]['dec']
                 t = nf.iloc[0]['t']
-
-                # adding edge points
                 edge_points = pd.DataFrame({
                     'col': [0, 0, 800, 800],
                     'row': [0, 800, 0, 800],
@@ -51,7 +52,6 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
                     'dec': [dec,dec,dec,dec],
                     't': [t,t,t,t]
                 })
-
                 nf = pd.concat([nf, edge_points], ignore_index=True)
 
                 print("quickbinning")
@@ -65,16 +65,12 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
                 disp_mask = ra_stdev + dec_stdev > .014
                 dark_mask = count <= .008
 
-                print("making new masks")
+                print("making & saving new masks")
                 hmask = np.ones(count.shape, dtype=bool)
                 cmask = np.ones(count.shape, dtype=bool)
-
                 hmask[density_mask & disp_mask] = 0
-                print("saving hotspot mask")
                 hmask.tofile(f'{savepath}{eclipse}-{band}d-hmask.bin')
-
                 cmask[dark_mask] = 0
-                print("saving coldspot mask")
                 cmask.tofile(f'{savepath}{eclipse}-{band}d-cmask.bin')
             else:
                 print("photonlist too big")
