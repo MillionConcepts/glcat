@@ -48,7 +48,7 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
                     'col': [0, 0, 800, 800],
                     'row': [0, 800, 0, 800],
                     'ra': [ra,ra,ra,ra],
-                    'dec': [dec,dec,dec,dec]
+                    'dec': [dec,dec,dec,dec],
                     't': [t,t,t,t]
                 })
 
