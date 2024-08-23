@@ -12,23 +12,16 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
     # use existing photonlists to make individual hotspot and coldspot masks
     # per eclipse band
 
-    photonlist = str(savepath + photonlist_path)
-    print(photonlist)
-    if os.path.exists(photonlist):
+    photon_file = str(savepath + photonlist_path)
+    print(photon_file)
+    if os.path.exists(photon_file):
         try:
             # get photonlist from bucket
             print("reading photonlist")
 
-            parquet_file = parquet.ParquetFile(photonlist)
-            n = 20000000
-            nf = filter_parquet_with_iter_batches(photonlist, n).to_pandas()
-            #nf = parquet.read_table(photonlist,
-            #                        columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()\
-            #for chunk in pd.read_parquet(photonlist,
-            #                             columns=['col', 'row', 'ra', 'dec', 't'],
-            #                             chunksize=n):
-           #     nf = pd.concat([nf, chunk.iloc[::0]])
-            print(type(nf))
+            photonlist = parquet.ParquetFile(photon_file)
+            nf = photonlist.read_row_groups([1],columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
+            print(len(nf))
 
             nf['row_rnd'] = nf['row'].round().astype(int)
             nf['col_rnd'] = nf['col'].round().astype(int)
@@ -96,7 +89,5 @@ def filter_parquet_with_iter_batches(file_path, batch_size):
     # there might be a better way to do this since I only want one really big chunk
     batch =  next(parquet_file.iter_batches(columns=['col', 'row', 'ra', 'dec', 't'],
                                                batch_size=batch_size))
-    print(type(batch))
     df = batch.to_pandas()
-    print(type(df))
     yield df
