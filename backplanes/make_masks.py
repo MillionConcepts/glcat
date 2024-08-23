@@ -21,7 +21,7 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
 
             parquet_file = parquet.ParquetFile(photonlist)
             n = 20000000
-            nf = filter_parquet_with_iter_batches(photonlist, n)
+            nf = filter_parquet_with_iter_batches(photonlist, n).to_pandas()
             #nf = parquet.read_table(photonlist,
             #                        columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()\
             #for chunk in pd.read_parquet(photonlist,
@@ -29,6 +29,7 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
             #                             chunksize=n):
            #     nf = pd.concat([nf, chunk.iloc[::0]])
             print(type(nf))
+
             nf['row_rnd'] = nf['row'].round().astype(int)
             nf['col_rnd'] = nf['col'].round().astype(int)
 
@@ -95,5 +96,7 @@ def filter_parquet_with_iter_batches(file_path, batch_size):
     # there might be a better way to do this since I only want one really big chunk
     batch =  next(parquet_file.iter_batches(columns=['col', 'row', 'ra', 'dec', 't'],
                                                batch_size=batch_size))
+    print(type(batch))
     df = batch.to_pandas()
+    print(type(df))
     yield df
