@@ -52,8 +52,7 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
                     't': [t,t,t,t]
                 })
 
-                # Append the new rows to the DataFrame
-                nf = nf.append(edge_points, ignore_index=True)
+                nf = pd.concat([nf, edge_points], ignore_index=True)
 
                 print("quickbinning")
                 ra_stdev = bin2d(nf['col'], nf['row'], nf['ra'], 'std', nbins)
