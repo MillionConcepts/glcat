@@ -20,8 +20,6 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
             print("reading photonlist")
 
             parquet_file = parquet.ParquetFile(photonlist)
-            nrows = parquet_file.metadata.num_rows
-            print(nrows)
             n = 20000000
             nf = filter_parquet_with_iter_batches(photonlist, n)
             #nf = parquet.read_table(photonlist,
@@ -30,7 +28,7 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
             #                             columns=['col', 'row', 'ra', 'dec', 't'],
             #                             chunksize=n):
            #     nf = pd.concat([nf, chunk.iloc[::0]])
-
+            print(type(nf))
             nf['row_rnd'] = nf['row'].round().astype(int)
             nf['col_rnd'] = nf['col'].round().astype(int)
 
