@@ -62,8 +62,8 @@ def make_masks_per_eclipse(eclipse, band, ra_cutoff, dec_cutoff, photonlist_path
 
                 print("masking binned data")
                 density_mask = count >= .9
-                disp_mask_ra = ra_stdev > (ra_cutoff.iloc[0] + .001)
-                disp_mask_dec = dec_stdev > (dec_cutoff.iloc[0] + .001)
+                disp_mask_ra = ra_stdev > (ra_cutoff + .001)
+                disp_mask_dec = dec_stdev > (dec_cutoff + .001)
                 disp_mask = disp_mask_ra + disp_mask_dec
                 dark_mask = count <= .008
 

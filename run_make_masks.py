@@ -20,12 +20,16 @@ if __name__ == "__main__":
         start_time = time.time()
 
         eclipse = photonlist_path[0:6]
-
-        cutoff_data = parquet.read_table('~/glcat/notebooks/masks_flats/stdev_by_eclipse.parquet',
+        try:
+            cutoff_data = parquet.read_table('~/glcat/notebooks/masks_flats/stdev_by_eclipse.parquet',
                                          filters=[("eclipse" == eclipse)]).to_pandas()
+            ra_cutoff = cutoff_data['ra'].iloc[0]
+            dec_cutoff = cutoff_data['dec'].iloc[0]
+        except:
+            ra_cutoff = .01
+            dec_cutoff = .01
 
-        ra_cutoff = cutoff_data['ra']
-        dec_cutoff = cutoff_data['dec']
+
         print(f"cutoffs: {ra_cutoff}, {dec_cutoff}")
         make_masks_per_eclipse(
             eclipse,
