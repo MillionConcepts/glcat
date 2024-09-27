@@ -71,9 +71,9 @@ def make_masks_per_eclipse(eclipse, band, ra_cutoff, dec_cutoff, photonlist_path
                 hmask = np.ones(count.shape, dtype=bool)
                 cmask = np.ones(count.shape, dtype=bool)
                 hmask[density_mask & disp_mask] = 0
-                hmask.tofile(f'{savepath}{eclipse}-{band}d-hmask.bin')
+                hmask.tofile(f'{savepath}{eclipse}-{band}d-hmask_varcutoff.bin')
                 cmask[dark_mask] = 0
-                cmask.tofile(f'{savepath}{eclipse}-{band}d-cmask.bin')
+                cmask.tofile(f'{savepath}{eclipse}-{band}d-cmask_varcutoff.bin')
             else:
                 print("photonlist too big")
         except KeyboardInterrupt:
