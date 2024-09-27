@@ -22,7 +22,7 @@ if __name__ == "__main__":
         eclipse = photonlist_path[0:6]
 
         cutoff_data = parquet.read_table('~/glcat/notebooks/masks_flats/stdev_by_eclipse.parquet',
-                                         filter=("eclipse" == eclipse)).to_pandas()
+                                         filters=[("eclipse" == eclipse)]).to_pandas()
 
         ra_cutoff = cutoff_data['ra']
         dec_cutoff = cutoff_data['dec']
