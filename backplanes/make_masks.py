@@ -18,7 +18,7 @@ def make_masks_per_eclipse(eclipse, band, ra_cutoff, dec_cutoff, photonlist_path
         try:
             # get photonlist from bucket
             photonlist = parquet.ParquetFile(photon_file)
-            if photonlist.metadata.num_rows < 20000000: # kind of an arbitrary cutoff
+            if photonlist.metadata.num_rows < 10000000: # kind of an arbitrary cutoff
                 print("reading photonlist")
                 # the current photonlists I'm using only have one row group but
                 # this will be more relevant in the future when I have more and want
@@ -61,11 +61,11 @@ def make_masks_per_eclipse(eclipse, band, ra_cutoff, dec_cutoff, photonlist_path
                 count = count / expt
 
                 print("masking binned data")
-                density_mask = count >= .75
-                disp_mask_ra = ra_stdev > (ra_cutoff - .005)
-                disp_mask_dec = dec_stdev > (dec_cutoff - .005)
+                density_mask = count >= .85
+                disp_mask_ra = ra_stdev > (ra_cutoff - .006)
+                disp_mask_dec = dec_stdev > (dec_cutoff - .006)
                 disp_mask = disp_mask_ra + disp_mask_dec
-                dark_mask = count <= .007
+                dark_mask = count <= .005
 
                 print("making & saving new masks")
                 hmask = np.ones(count.shape, dtype=bool)
