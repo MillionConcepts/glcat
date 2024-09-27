@@ -25,6 +25,7 @@ if __name__ == "__main__":
 
         ra_cutoff = cutoff_data[(cutoff_data['eclipse'] == eclipse)]['ra']
         dec_cutoff = cutoff_data[(cutoff_data['eclipse'] == eclipse)]['dec']
+        print(type(ra_cutoff))
 
         make_masks_per_eclipse(
             eclipse,
