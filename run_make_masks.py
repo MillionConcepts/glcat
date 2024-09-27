@@ -23,8 +23,8 @@ if __name__ == "__main__":
 
         eclipse = photonlist_path[0:6]
 
-        ra_cutoff = cutoff_data[(cutoff_data['eclipse'] == eclipse)]['ra'].iloc[0]
-        dec_cutoff = cutoff_data[(cutoff_data['eclipse'] == eclipse)]['dec'].iloc[0]
+        ra_cutoff = cutoff_data[(cutoff_data['eclipse'] == eclipse)]['ra']
+        dec_cutoff = cutoff_data[(cutoff_data['eclipse'] == eclipse)]['dec']
         print(f"cutoffs: {ra_cutoff}, {dec_cutoff}")
         make_masks_per_eclipse(
             eclipse,
