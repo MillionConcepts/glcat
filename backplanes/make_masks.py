@@ -8,7 +8,7 @@ import numpy as np
 import pyarrow.parquet as parquet
 
 
-def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
+def make_masks_per_eclipse(eclipse, band, ra_cutoff, dec_cutoff, photonlist_path, nbins, savepath):
     # use existing photonlists to make individual hotspot and coldspot masks
     # per eclipse & band
 
@@ -62,7 +62,9 @@ def make_masks_per_eclipse(eclipse, band, photonlist_path, nbins, savepath):
 
                 print("masking binned data")
                 density_mask = count >= .9
-                disp_mask = ra_stdev + dec_stdev > .014
+                disp_mask_ra = ra_stdev > ra_cutoff + .001
+                disp_mask_dec = dec_stdev > dec_cutoff + .001
+                disp_mask = disp_mask_ra + disp_mask_dec
                 dark_mask = count <= .008
 
                 print("making & saving new masks")
