@@ -18,7 +18,7 @@ def make_masks_per_eclipse(eclipse, band, ra_cutoff, dec_cutoff, photonlist_path
         try:
             # get photonlist from bucket
             photonlist = parquet.ParquetFile(photon_file)
-            if photonlist.metadata.num_rows < 40000000: # kind of an arbitrary cutoff
+            if photonlist.metadata.num_rows < 10000000: # kind of an arbitrary cutoff
                 print("reading photonlist")
                 # the current photonlists I'm using only have one row group but
                 # this will be more relevant in the future when I have more and want
