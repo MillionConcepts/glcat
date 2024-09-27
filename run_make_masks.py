@@ -8,8 +8,6 @@ if __name__ == "__main__":
     paths = pd.read_csv("~/glcat/notebooks/masks_flats/photonfile_keys.csv")
     eclipses = paths['parq_keys'][0:]
 
-    cutoff_data = parquet.read_table('~/glcat/notebooks/masks_flats/stdev_by_eclipse.parquet').to_pandas()
-
     # band
     band = "n"
 
@@ -23,8 +21,11 @@ if __name__ == "__main__":
 
         eclipse = photonlist_path[0:6]
 
-        ra_cutoff = cutoff_data[(cutoff_data['eclipse'] == eclipse)]['ra']
-        dec_cutoff = cutoff_data[(cutoff_data['eclipse'] == eclipse)]['dec']
+        cutoff_data = parquet.read_table('~/glcat/notebooks/masks_flats/stdev_by_eclipse.parquet',
+                                         filter=("eclipse" == eclipse)).to_pandas()
+
+        ra_cutoff = cutoff_data['ra']
+        dec_cutoff = cutoff_data['dec']
         print(f"cutoffs: {ra_cutoff}, {dec_cutoff}")
         make_masks_per_eclipse(
             eclipse,
