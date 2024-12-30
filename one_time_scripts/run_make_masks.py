@@ -5,7 +5,7 @@ if __name__ == "__main__":
     import time
     import pyarrow.parquet as parquet
 
-    paths = pd.read_csv("~/glcat/notebooks/masks_flats/photonfile_keys.csv")
+    paths = pd.read_csv("/notebooks/masks_flats/photonfile_keys.csv")
     eclipses = paths['parq_keys'][0:]
 
     # band
