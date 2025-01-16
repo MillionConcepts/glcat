@@ -1,0 +1,13 @@
+# Python artifacts (short version)
+*.py[cod]
+
+*.egg-info/
+.ipynb_checkpoints/
+.venv/
+__pycache__/
+
+# Editor backups and such
+*~
+\#*#
+.#*
+.*.sw[a-p]

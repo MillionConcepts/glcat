@@ -1,0 +1,39 @@
+[project]
+name        = "glcat"
+version     = "0.0.1"
+description = "Star cataloguer for the GALEX ultraviolet telescope"
+#readme      = "README.md"
+#license     = { file = "LICENSE" }
+
+authors     =  [
+    { name = "Chase Million",     email = "chase@millionconcepts.com"    },
+    { name = "Michael St. Clair", email = "mstclair@millionconcepts.com" },
+    { name = "Beka Albach",       email = "ralbach@millionconcepts.com"  },
+    { name = "Zack Weinberg",     email = "zack@millionconcepts.com"     },
+]
+
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+
+requires-python = ">=3.10"
+dependencies = [
+    "gPhoton @ git+https://github.com/MillionConcepts/gphoton2@refactor"
+]
+
+[project.scripts]
+glcat = "glcat.cli:main"
+
+[project.urls]
+Repository = "https://github.com/MillionConcepts/glcat"
+
+[build-system]
+requires = ["setuptools >= 64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["glcat"]
