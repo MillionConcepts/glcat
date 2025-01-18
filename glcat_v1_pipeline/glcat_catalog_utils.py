@@ -3,7 +3,7 @@ import pandas as pd
 from lightcurve_utils import counts2mag
 
 def accumulate_run_data(eclipse,metadata=None,
-                        datadir = "/Users/cm/github/gphoton2_refactor/gPhoton2/test_data/",
+                        datadir = "/Users/cm/github/gPhoton2/test_data/",
                         apers = [1.5, 2.3, 3.8, 6.0, 9.0, 12.8, 17.3],
                        ):
     edir = f"e{str(eclipse).zfill(5)}"
@@ -16,12 +16,12 @@ def accumulate_run_data(eclipse,metadata=None,
             at[f'{p}{m}'] = {}
             for a in apers:
                 at[f'{p}{m}'][a] = pd.read_csv(
-                    f"{datadir}{edir}/{edir}-{p}d-b00-f0120-movie-photom-{str(a).replace('.','_')}-mo{m}.csv",
+                    f"{datadir}{edir}/{edir}-{p}d-f0120-b00-movie-photom-{str(a).replace('.','_')}-mo{m}.csv",
                     index_col=None)
     data['phot'] = at
 
-    data['expt'] = {'NUV':pd.read_csv(f"{datadir}{edir}/{edir}-nd-b00-f0120-movie-exptime.csv",index_col=None),
-                    'FUV':pd.read_csv(f"{datadir}{edir}/{edir}-fd-b00-f0120-movie-exptime.csv",index_col=None)}
+    data['expt'] = {'NUV':pd.read_csv(f"{datadir}{edir}/{edir}-nd-f0120-b00-movie-exptime.csv",index_col=None),
+                    'FUV':pd.read_csv(f"{datadir}{edir}/{edir}-fd-f0120-b00-movie-exptime.csv",index_col=None)}
     return data
 
 def derived_photometry_table(data,aper,code):
