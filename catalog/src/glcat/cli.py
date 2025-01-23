@@ -21,6 +21,24 @@ class Band(enum.Flag):
     FUV = 0x02
     ALL = 0x03
 
+    def __iter__(self) -> 'Iterator[Band]':
+        """Iterate over all bits set in self."""
+        if self & Band.NUV:
+            yield Band.NUV
+        if self & Band.FUV:
+            yield Band.FUV
+
+    @property
+    def suffix(self):
+        """Returns the movie file suffix for self.  Raises ValueError
+           if self does not describe a single band."""
+        if self == Band.NUV:
+            return "mon"
+        elif self == Band.FUV:
+            return "mof"
+        else:
+            raise ValueError("suffix is only defined for single bands")
+
     @classmethod
     def parse(cls, s: str) -> 'Band':
         """Parse a string as a Band value or comma-separated sequence
