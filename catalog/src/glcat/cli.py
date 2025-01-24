@@ -13,50 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional, NoReturn
 
-
-class Band(enum.Flag):
-    """Indicates which band(s) of the raw data to process in a particular
-       operation."""
-    NUV = 0x01
-    FUV = 0x02
-    ALL = 0x03
-
-    def __iter__(self) -> 'Iterator[Band]':
-        """Iterate over all bits set in self."""
-        if self & Band.NUV:
-            yield Band.NUV
-        if self & Band.FUV:
-            yield Band.FUV
-
-    @property
-    def suffix(self):
-        """Returns the movie file suffix for self.  Raises ValueError
-           if self does not describe a single band."""
-        if self == Band.NUV:
-            return "mon"
-        elif self == Band.FUV:
-            return "mof"
-        else:
-            raise ValueError("suffix is only defined for single bands")
-
-    @classmethod
-    def parse(cls, s: str) -> 'Band':
-        """Parse a string as a Band value or comma-separated sequence
-           of Band values which are or-ed together.  Parsing is case
-           insensitive and accepts several convenient aliases."""
-
-        val = cls(0)
-        for token in s.lower().split(','):
-            token = token.strip()
-            if token in ("nuv", "near"):
-                val |= cls.NUV
-            elif token in ("fuv", "far"):
-                val |= cls.FUV
-            elif token in ("both", "all"):
-                val |= cls.ALL
-            else:
-                raise ValueError(f"unrecognized frequency band {token!r}")
-        return val
+from glcat import stages
+from glcat.constants import (
+    Band,
+    DEFAULT_DEPTH,
+    DEFAULT_APERTURES,
+    ALL_APERTURES
+)
 
 
 class Stage(enum.Flag):
@@ -105,6 +68,8 @@ class CLIOptions:
     eclipses: list[int]
     bands: Band
     stages: Stage
+    depth: Optional[int]
+    apertures: list[float]
     local_root: Path
     remote_root: Optional[str]
     download: bool
@@ -117,6 +82,21 @@ class CLIOptions:
 
     @classmethod
     def from_args(cls, args: Optional[Iterable[str]] = None) -> 'CLIOptions':
+
+        def parse_depth(arg: str) -> Optional[int]:
+            arg = arg.lower()
+            if arg in ("-", "inf", "infinity", "unlimited"):
+                return None
+            return int(arg)
+
+        def parse_apertures(arg: str) -> list[float]:
+            arg = arg.lower()
+            if arg in ("all", "mission"):
+                return ALL_APERTURES
+            if arg == "default":
+                return DEFAULT_APERTURES
+            return sorted(set(float(a.strip()) for a in arg.split(",")))
+
         ap = argparse.ArgumentParser(description=__doc__)
         # note: nothing gets a short option yet (except --verbose and
         # --parallel, which have standard short options) because
@@ -174,6 +154,20 @@ class CLIOptions:
             " <local_root>/aspect"
         )
         ap.add_argument(
+            "--depth", type=parse_depth, default=DEFAULT_DEPTH,
+            metavar="SECS",
+            help="time (in seconds; fractions not allowed) to integrate"
+            " over for each movie frame; use 'inf' or '-' for a single"
+            " frame covering the entire observation leg"
+        )
+        ap.add_argument(
+            "--aperture",
+            type=parse_apertures, default=DEFAULT_APERTURES,
+            metavar="ARCSEC[,ARCSEC,...]",
+            help="comma-separated list of aperture sizes (in arcseconds)"
+            " to use to compute photometry"
+        )
+        ap.add_argument(
             "--force-enable-shared-memory",
             action="store_const", dest="share_memory", const=True, default=None,
             help="force use of shared memory even when running single-threaded"
@@ -197,6 +191,8 @@ class CLIOptions:
             eclipses = ns.eclipse,
             stages = ns.stage,
             bands = ns.band,
+            depth = ns.depth,
+            apertures = ns.aperture,
             local_root = ns.local_root,
             remote_root = ns.remote_root,
             download = ns.download,
@@ -210,10 +206,6 @@ class CLIOptions:
 
 
 def process_eclipse(eclipse: int, options: CLIOptions):
-    # This import has to be at the function level to avoid a circular
-    # dependency.
-    from glcat import stages
-
     if options.stages & Stage.DOWNLOAD:
         stages.download_raw(
             eclipse,
@@ -231,6 +223,8 @@ def process_eclipse(eclipse: int, options: CLIOptions):
             remote_root=options.remote_root,
             aspect_dir=options.aspect_dir,
             bands=options.bands,
+            depth=options.depth,
+            aperture_sizes=options.apertures,
             recreate=options.recreate,
             verbose=options.verbose,
             parallel=options.parallel,
@@ -244,6 +238,8 @@ def process_eclipse(eclipse: int, options: CLIOptions):
             remote_root=options.remote_root,
             aspect_dir=options.aspect_dir,
             bands=options.bands,
+            depth=options.depth,
+            aperture_sizes=options.apertures,
             recreate=options.recreate,
             verbose=options.verbose,
             parallel=options.parallel,

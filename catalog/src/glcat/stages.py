@@ -6,12 +6,8 @@ from pathlib import Path
 from typing import Optional
 
 from gPhoton.pipeline import execute_pipeline
-from glcat.cli import Band
+from glcat.constants import Band, DEFAULT_APERTURES, DEFAULT_DEPTH
 
-# TODO Should these be command line parameters or pulled from eclipse
-# metadata or something?
-APERTURE_SIZES = [ 1.5, 2.3, 3.8, 6.0, 9.0, 12.8, 17.3, 30., 60., 90., ]
-DEPTH = 120
 
 def download_raw(
     eclipse: int,
@@ -33,6 +29,8 @@ def base_photometry(
     remote_root: Optional[str] = None,
     aspect_dir: Optional[str] = None,
     bands: Band = Band.ALL,
+    depth: Optional[int] = DEFAULT_DEPTH,
+    aperture_sizes: list[float] = DEFAULT_APERTURES,
     recreate: bool = False,
     verbose: int = 0,
     parallel: int = 1,
@@ -49,8 +47,8 @@ def base_photometry(
             aspect_dir = aspect_dir,
             recreate = recreate,
             download = False,
-            depth = DEPTH,
-            aperture_sizes = APERTURE_SIZES,
+            depth = depth,
+            aperture_sizes = aperture_sizes,
             write = { "movie": True, "image": True },
             coregister_lightcurves = True,
             photometry_only = False,
@@ -68,6 +66,8 @@ def forced_photometry(
     aspect_dir: Optional[str] = None,
     bands: Band = Band.ALL,
     recreate: bool = False,
+    depth: Optional[int] = DEFAULT_DEPTH,
+    aperture_sizes: list[float] = DEFAULT_APERTURES,
     verbose: int = 0,
     parallel: int = 1,
     chunk_size: int = 1000000,
