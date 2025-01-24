@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional, NoReturn
 
+from gPhoton.reference import check_eclipse
 from glcat import stages
 from glcat.constants import (
     Band,
@@ -79,6 +80,7 @@ class CLIOptions:
     chunk_size: int
     share_memory: Optional[bool]
     aspect_dir: Path
+    print_tracebacks: bool
 
     @classmethod
     def from_args(cls, args: Optional[Iterable[str]] = None) -> 'CLIOptions':
@@ -179,6 +181,10 @@ class CLIOptions:
             help="force non-use of shared memory even when running multithreaded"
             " (mostly useful for debugging)"
         )
+        ap.add_argument(
+            "--print-tracebacks", action="store_true",
+            help="print tracebacks for Python exceptions"
+        )
 
         ns = ap.parse_args(args)
 
@@ -202,10 +208,132 @@ class CLIOptions:
             chunk_size = ns.chunk_size,
             share_memory = ns.share_memory,
             aspect_dir = aspect_dir,
+            print_tracebacks = ns.print_tracebacks,
         )
 
 
+def report_uncaught_exception(
+    e: Exception,
+    eclipse: int,
+    print_tracebacks: bool,
+) -> None:
+    if print_tracebacks:
+        sys.stderr.write(
+            f"\nException while processing eclipse {eclipse}:\n"
+        )
+        import traceback
+        traceback.print_exc()
+        sys.stderr.write("\n")
+        return
+
+    if isinstance(e, OSError):
+        # Convert an OSError to a human-readable message the way I think
+        # it should be done, which is different from the way the Python
+        # devs think it should be done.  Also deals with OSError objects
+        # created by e.g. `raise FileNotFoundError(path)`, which will be
+        # structured completely differently than the equivalent thrown by
+        # a failing `open(path)`.  (We care because pyarrow does this.)
+
+        if e.strerror:
+            # if e.strerror is set, we can safely assume this exception
+            # was created by CPython core and e.filename/e.filename2
+            # will also be set when relevant
+            if e.filename and e.filename2:
+                msg = f"{e.filename!r} -> {e.filename2!r}: {e.strerror}"
+            elif e.filename:
+                msg = f"{e.filename!r}: {e.strerror}"
+            else:
+                msg = e.strerror
+        else:
+            import errno
+            from os import strerror
+
+            # we assume this list to be comprehensive:
+            # https://docs.python.org/3.10/library/exceptions.html#os-exceptions
+            # ConnectionError is an intermediate base class and we'd do the
+            # same thing for it that we do for the catch-all case at the
+            # bottom, so it's excluded
+            match e:
+                # Unambiguous cases
+                case ChildProcessError():
+                    err = strerror(errno.ECHILD)
+                case ConnectionAbortedError():
+                    err = strerror(errno.ECONNABORTED)
+                case ConnectionRefusedError():
+                    err = strerror(errno.ECONNREFUSED)
+                case ConnectionResetError():
+                    err = strerror(errno.ECONNRESET)
+                case FileExistsError():
+                    err = strerror(errno.EEXIST)
+                case FileNotFoundError():
+                    err = strerror(errno.ENOENT)
+                case InterruptedError():
+                    err = strerror(errno.EINTR)
+                case IsADirectoryError():
+                    err = strerror(errno.EISDIR)
+                case NotADirectoryError():
+                    err = strerror(errno.ENOTDIR)
+                case ProcessLookupError():
+                    err = strerror(errno.ESRCH)
+                case TimeoutError():
+                    err = strerror(errno.ETIMEDOUT)
+
+                # Ambiguous cases
+                # BlockingIOError can mean either EWOULDBLOCK or EINPROGRESS.
+                # (The Python docs also list their respective aliases EAGAIN
+                # and EALREADY.)  Either condition reaching this function is
+                # almost surely a bug, so we just pick one.
+                case BlockingIOError():
+                    err = strerror(errno.EWOULDBLOCK)
+
+                # BrokenPipeError can mean either EPIPE or ESHUTDOWN.
+                # The latter is more likely to come up in this application.
+                case BrokenPipeError():
+                    err = strerror(errno.ESHUTDOWN)
+
+                # PermissionError also covers EPERM, but EPERM almost always
+                # means "you tried to do something that only root can do"
+                # (e.g. set the system's idea of "wall clock" time), which
+                # should never come up in this application.
+                case PermissionError():
+                    err = strerror(errno.EACCES)
+
+                # Subclasses that were added after Python 3.10 will wind up
+                # here.  Hopefully the type's name will be helpful.
+                case other:
+                    err = type(other).__name__
+                    if err == "OSError":
+                        err = "system error, details lost"
+
+            # guess that any string payload of the exception is a relevant
+            # file name
+            if e.args:
+                msg = (
+                    " -> ".join(repr(a) for a in e.args)
+                    + ": "
+                    + err
+                )
+            else:
+                msg = err
+    else:
+        # Other exception types are much less troublesome, but we do have
+        # to watch out for exceptions that stringify to ''.
+        msg = str(e)
+        if not msg:
+            msg = type(e).__name__
+
+    sys.stderr.write(f"glcat: eclipse {eclipse}: error: {msg}\n")
+
+
 def process_eclipse(eclipse: int, options: CLIOptions):
+    e_warn, e_error = check_eclipse(eclipse, options.aspect_dir)
+    for warning in e_warn:
+        sys.stderr.write(f"glcat: eclipse {eclipse}: warning: {warning}\n")
+    for err in e_error:
+        sys.stderr.write(f"glcat: eclipse {eclipse}: error: {err}\n")
+    if e_error:
+        raise RuntimeError("skipped due to metadata issues\n")
+
     if options.stages & Stage.DOWNLOAD:
         stages.download_raw(
             eclipse,
@@ -267,16 +395,22 @@ def process_eclipse(eclipse: int, options: CLIOptions):
         )
 
 
-def main() -> NoReturn:
+def main() -> int:
     options = CLIOptions.from_args()
 
     # TODO: cross-stage/cross-eclipse parallelism?
     # spin up a multiprocessing Pool and farm out invocations
     # of process_eclipse.  requires figuring out how to split
     # options.parallel into eclipse-level and chunk-level parallelism.
+    status = 0
     for eclipse in options.eclipses:
-        process_eclipse(eclipse, options)
+        try:
+            process_eclipse(eclipse, options)
+        except Exception as e:
+            status = 1
+            report_uncaught_exception(e, eclipse, options.print_tracebacks)
+    return status
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
