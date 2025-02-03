@@ -5,7 +5,10 @@ metadata = parquet.read_table('/Users/cm/github/glcat/glcat_v1_pipeline/visit_me
 
 output_dir = "/Users/cm/github/gPhoton2/test_data/"
 depth = 120
-
+eclipse = 23456
+band = 'NUV'
+execute_pipeline(eclipse,band,local_root=output_dir)#,depth=120)
+                 
 # for eclipse in [36243, 15662, 19197,  4230, 16366, 34213, 23586, 13321,  8614,
 #        44175, 15797, 32851, 25981,  9225, 28481, 37312, 18854,  7327,
 #         3020, 10740, 40003, 18568, 32289, 40360,  9836, 32941, 35034,

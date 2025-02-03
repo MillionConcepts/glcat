@@ -27,3 +27,23 @@ def counts2mag(cps, band):
             mag = -2.5 * np.log10(cps) + scale
 
     return mag
+
+def counts2flux(cps, band):
+    """
+    Converts GALEX counts per second to flux (erg sec^-1 cm^-2 A^-1).
+        See: http://asd.gsfc.nasa.gov/archive/galex/FAQ/counts_background.html
+
+    :param cps: The flux in counts per second.
+
+    :type cps: float
+
+    :param band: The band to use, either 'FUV' or 'NUV'.
+
+    :type band: str
+
+    :returns: float -- The converted flux in erg sec^-1 cm^-2 A^-1.
+    """
+
+    scale = 1.4e-15 if band == 'FUV' else 2.06e-16
+
+    return scale*cps

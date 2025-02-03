@@ -1,6 +1,14 @@
 import numpy as np
 import pandas as pd
-from lightcurve_utils import counts2mag
+from lightcurve_utils import counts2mag, counts2flux
+import csv
+
+def fast_read_csv(fn):
+    with open(fn, mode='r') as file:
+        csv_reader = csv.reader(file)
+        data = [row for row in csv_reader]
+        d = pd.DataFrame(data[1:],columns=data[0])
+    return d
 
 def accumulate_run_data(eclipse,metadata=None,
                         datadir = "/Users/cm/github/gPhoton2/test_data/",
@@ -15,26 +23,35 @@ def accumulate_run_data(eclipse,metadata=None,
         for m in 'nf':
             at[f'{p}{m}'] = {}
             for a in apers:
-                at[f'{p}{m}'][a] = pd.read_csv(
+                # at[f'{p}{m}'][a] = pd.read_csv(
+                #     f"{datadir}{edir}/{edir}-{p}d-f0120-b00-movie-photom-{str(a).replace('.','_')}-mo{m}.csv",
+                #     index_col=None)
+                at[f'{p}{m}'][a] = fast_read_csv(
                     f"{datadir}{edir}/{edir}-{p}d-f0120-b00-movie-photom-{str(a).replace('.','_')}-mo{m}.csv",
-                    index_col=None)
+                    )
+
     data['phot'] = at
 
-    data['expt'] = {'NUV':pd.read_csv(f"{datadir}{edir}/{edir}-nd-f0120-b00-movie-exptime.csv",index_col=None),
-                    'FUV':pd.read_csv(f"{datadir}{edir}/{edir}-fd-f0120-b00-movie-exptime.csv",index_col=None)}
+    # data['expt'] = {'NUV':pd.read_csv(f"{datadir}{edir}/{edir}-nd-f0120-b00-movie-exptime.csv",index_col=None),
+    #                 'FUV':pd.read_csv(f"{datadir}{edir}/{edir}-fd-f0120-b00-movie-exptime.csv",index_col=None)}
+    data['expt'] = {'NUV':fast_read_csv(f"{datadir}{edir}/{edir}-nd-f0120-b00-movie-exptime.csv"),
+                    'FUV':fast_read_csv(f"{datadir}{edir}/{edir}-fd-f0120-b00-movie-exptime.csv")}
+
     return data
 
 def derived_photometry_table(data,aper,code):
     band = {'n':'NUV','f':'FUV'}[code[0]]
-    expt = data['expt'][band]['expt'].sum()
-    cps = np.array(data['phot'][code][aper]['aperture_sum'].tolist())/expt
-    cps_err = np.sqrt(data['phot'][code][aper]['aperture_sum'].tolist())/expt
+    expt = np.array(data['expt'][band]['expt'],dtype=float).sum()
+    cps = np.array(data['phot'][code][aper]['aperture_sum'].tolist(),dtype=float)/expt
+    cps_err = np.sqrt(np.array(data['phot'][code][aper]['aperture_sum'].tolist(),dtype=float))/expt
     mag = counts2mag(cps,band)
     mag_err_upper = np.abs(counts2mag(cps-cps_err,band) - mag)
     mag_err_lower = np.abs(counts2mag(cps+cps_err,band) - mag)
+    flux = counts2flux(cps,band)
+    flux_err = counts2flux(cps_err,band)
 
     return pd.DataFrame(
-        {'CPS':cps,'CPS_ERR':cps_err,
+        {'CPS':cps,'CPS_ERR':cps_err,'FLUX':flux,'FLUX_ERR':flux_err,
          'MAG':mag,'MAG_ERR_UPPER':mag_err_upper,'MAG_ERR_LOWER':mag_err_lower
          #'MASK_FLAG':(data['phot'][code][aper]['aperture_sum_mask'] != 0).astype(int),
          #'EDGE_FLAG':(data['phot'][code][aper]['aperture_sum_edge'] != 0).astype(int),
@@ -54,7 +71,7 @@ def accumulate_photometry(data,code,
         dp = derived_photometry_table(data,aper,code)
         phot = pd.concat([phot,dp.add_prefix(f'{band}_').add_suffix(suffix)],axis=1)
     phot[f'{band}_EXPT']=np.full(len(data['phot'][code][aper]),
-                                 data['expt'][band]['expt'].sum())
+                                 np.array(data['expt'][band]['expt'],dtype=float).sum())
     return pd.DataFrame(phot)
 
 def make_catalog_by_code(data,code):

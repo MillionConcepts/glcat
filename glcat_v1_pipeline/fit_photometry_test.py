@@ -32,17 +32,19 @@ def fit_aperture_curve(aperture_radii,flux,flux_err,
                        showstats=False, # print summary results
                        nsteps = 5000, # number of MCMC steps
                        burnin = 200, # number of burn-in steps
+                       nwalkers = 32, # number of MCMC walkers
                       ):
     # Set up the MCMC sampler
     ndim = 3  # Number of parameters to fit (total_flux, sigma, background)
-    nwalkers = 32  # Number of MCMC walkers
     
     # Initialize the walkers
     initial_guess = [np.mean(flux), 5/2.355, (flux[-1]-flux[-2])/(np.pi * (aperture_radii[-1]**2-aperture_radii[-2]**2))]
     pos = initial_guess + 1e-4 * np.random.randn(nwalkers, ndim)
     
     # Run the MCMC sampler
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, args=(aperture_radii, flux, flux_err))
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, 
+                                    log_probability, 
+                                    args=(aperture_radii, flux, flux_err),)
     burn_in = sampler.run_mcmc(pos, burnin)
     sampler.reset()
     sampler.run_mcmc(burn_in, nsteps)
@@ -80,7 +82,7 @@ for i in tqdm(np.arange(len(ncat))):
     flux = np.array([ncat[f'FUV_CPS_APER{a}'].iloc[i] for a,r in enumerate(aperture_radii)])
     flux_err = np.array([ncat[f'FUV_CPS_ERR_APER{a}'].iloc[i] for a,r in enumerate(aperture_radii)])
     ix = np.where(np.isfinite(flux))
-    flat_samples = fit_aperture_curve(aperture_radii[ix],flux[ix],flux_err[ix],nsteps=200)
+    flat_samples = fit_aperture_curve(aperture_radii[ix],flux[ix],flux_err[ix],nsteps=5000)
 
     a,b,c = (np.percentile(flat_samples[:, 0], [16, 50, 84])[1],
              np.percentile(flat_samples[:, 1], [16, 50, 84])[1],
@@ -104,12 +106,12 @@ for i in tqdm(np.arange(len(ncat))):
                                       })],
                        axis=0)
 
-#    plt.figure()
-#    plt.errorbar(aperture_radii,flux,yerr=flux_err,fmt='k-',label='data')
-#    plt.plot(aperture_radii,
-#             gaussian_flux_model([a,b,c,], aperture_radii),'b:',
-#             label=f'flux,sigma,bg= ({a:.3f} {b:.3f} {c:.3f})')
-#    plt.legend()
-#    plt.semilogy();
+   plt.figure()
+   plt.errorbar(aperture_radii,flux,yerr=flux_err,fmt='k-',label='data')
+   plt.plot(aperture_radii,
+            gaussian_flux_model([a,b,c,], aperture_radii),'b:',
+            label=f'flux,sigma,bg= ({a:.3f} {b:.3f} {c:.3f})')
+   plt.legend()
+   plt.semilogy();
 
 models.to_csv('ncat_fuv_fit_240616.csv',index=False)
