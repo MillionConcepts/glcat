@@ -6,20 +6,24 @@ from tqdm import tqdm
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle, Circle
 from astropy.visualization import ZScaleInterval
+from numba import njit
+
 
 def gaussian_flux_fraction(r, sigma):
     return 1 - np.exp(-r**2 / (2 * sigma**2))
 
-def gaussian_flux_model(theta, r):
-    total_flux, sigma, background = np.split(theta, 3, axis=-1)
+
+@njit(cache=True)
+def gaussian_flux_model(total_flux, sigma, background, r):
     return total_flux * (1 - np.exp(-r**2 / (2 * sigma**2))) + background * np.pi * r**2
 
-def log_likelihood(theta, r, flux, flux_err):
-    model = gaussian_flux_model(theta, r)
+@njit(cache=True)
+def log_likelihood(total_flux, sigma, background, r, flux, flux_err):
+    model = gaussian_flux_model(total_flux, sigma, background, r)
     return -0.5 * np.sum(((flux - model) / flux_err)**2,axis=1)
 
-def log_prior(theta):
-    total_flux, sigma, background = np.split(theta, 3, axis=-1)
+@njit(cache=True)
+def log_prior(total_flux, sigma, background):
     return np.where(
         (0 <= total_flux)
         & (total_flux < 1000)
@@ -30,13 +34,13 @@ def log_prior(theta):
         0,
         -np.inf
     ).ravel()
-    
+
+@njit(cache=True)
 def log_probability(theta, r, flux, flux_err):
-    lp = log_prior(theta)
-    # if not np.isfinite(lp):
-    #     return -np.inf
-    lp[~np.isfinite(lp)] = -np.inf
-    return lp + log_likelihood(theta, r, flux, flux_err)
+    total_flux, sigma, background = np.split(theta, 3, axis=1)
+    lp = log_prior(total_flux, sigma, background)
+    return lp + log_likelihood(total_flux, sigma, background, r, flux,
+                               flux_err)
 
 def mcmc_aperture_curve(aperture_radii,flux,flux_err,
                         nsteps = 1000, # number of MCMC steps
