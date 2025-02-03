@@ -7,29 +7,35 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle, Circle
 from astropy.visualization import ZScaleInterval
 
-# ncat = pd.read_csv('ncat_240616.csv',index_col=None)
-
 def gaussian_flux_fraction(r, sigma):
     return 1 - np.exp(-r**2 / (2 * sigma**2))
 
 def gaussian_flux_model(theta, r):
-    total_flux, sigma, background = theta
+    total_flux, sigma, background = np.split(theta, 3, axis=-1)
     return total_flux * (1 - np.exp(-r**2 / (2 * sigma**2))) + background * np.pi * r**2
 
 def log_likelihood(theta, r, flux, flux_err):
     model = gaussian_flux_model(theta, r)
-    return -0.5 * np.sum(((flux - model) / flux_err)**2)
+    return -0.5 * np.sum(((flux - model) / flux_err)**2,axis=1)
 
 def log_prior(theta):
-    total_flux, sigma, background = theta
-    if (0 <= total_flux < 1000) and (0 < sigma < 10) and (0 <= background < 100):
-        return 0.0
-    return -np.inf
+    total_flux, sigma, background = np.split(theta, 3, axis=-1)
+    return np.where(
+        (0 <= total_flux)
+        & (total_flux < 1000)
+        & (0 < sigma)
+        & (sigma < 10)
+        & (0 <= background)
+        & (background < 100),
+        0,
+        -np.inf
+    ).ravel()
     
 def log_probability(theta, r, flux, flux_err):
     lp = log_prior(theta)
-    if not np.isfinite(lp):
-        return -np.inf
+    # if not np.isfinite(lp):
+    #     return -np.inf
+    lp[~np.isfinite(lp)] = -np.inf
     return lp + log_likelihood(theta, r, flux, flux_err)
 
 def mcmc_aperture_curve(aperture_radii,flux,flux_err,
@@ -53,7 +59,9 @@ def mcmc_aperture_curve(aperture_radii,flux,flux_err,
     # Run the MCMC sampler
     sampler = emcee.EnsembleSampler(nwalkers, ndim, 
                                     log_probability, 
-                                    args=(aperture_radii, flux, flux_err),)
+                                    args=(aperture_radii, flux, flux_err),
+                                    vectorize=True
+                                    )
     burn_in = sampler.run_mcmc(pos, burnin)
     sampler.reset()
     sampler.run_mcmc(burn_in, nsteps)
@@ -136,12 +144,22 @@ def plot_mcmc_walkers(samples,savefig=None):
     else:
         plt.show()
 
-def plot_model_qa(samples,flux,flux_err,imgfn,
+def plot_model_qa(samples,flat_samples,flux,flux_err,img,impos,
                     aperture_radii = np.array([1.5, 2.3, 3.8, 6.0, 9.0, 12.8, 17.3]),
                       percentiles=[16,50,84],
                       labels = ["cps", "sigma", "bg_cps"],
                       r = np.arange(1.5,17.3,0.1),
                       savefig=None,):
+    # calculate model percentiles
+    percentiles=[16,50,84]
+    labels = ["cps", "sigma", "bg_cps"]
+    model_samples = np.zeros((len(flat_samples), len(r)))
+    for i, theta in enumerate(flat_samples):
+        model_samples[i] = gaussian_flux_model(theta, r)
+    # Calculate the median and confidence intervals of the model predictions
+    model_percentiles = np.percentile(model_samples, [16, 50, 84], axis=0)
+
+
     fig = plt.figure(figsize=(12,10))
     gs = GridSpec(6,6)
 
@@ -149,6 +167,7 @@ def plot_model_qa(samples,flux,flux_err,imgfn,
     mdl = fig.add_subplot(gs[:3,:3])
     mdl.errorbar(aperture_radii, flux, yerr=flux_err, fmt='k.', label='data w/ 1-sigma error bars')
     mdl.plot(r, model_percentiles[1], 'b:', label='model w/ 68% conf. interval',alpha=0.5)
+    mdl.set_ylim(0, None)
     mdl.fill_between(r, model_percentiles[0], model_percentiles[2], color='b', alpha=0.2)#, label='68% confidence interval')
     stats = get_percentile_ranges(flat_samples, percentiles, labels)
     # textstr = '\n'.join([f"{label}: {stats[label][0]:.3f} +{stats[label][2]:.3f} -{stats[label][1]:.3f}" for label in ['cps','bg_cps','sigma']])
@@ -156,7 +175,7 @@ def plot_model_qa(samples,flux,flux_err,imgfn,
                         f"{'bgnd'}: {stats['bg_cps'][0]:.3f} +{stats['bg_cps'][2]:.3f} -{stats['bg_cps'][1]:.3f} cps/as^2",
                         f"{'fwhm'}: {2.355*stats['sigma'][0]:.3f} +{2.355*stats['sigma'][2]:.3f} -{2.355*stats['sigma'][1]:.3f} as     "])
 
-    mdl.text(17.5, 0.01, textstr, fontsize=12, bbox=dict(facecolor='white', alpha=0.5), ha='right', va='bottom')
+    mdl.text(17.5, 0.025, textstr, fontsize=12, bbox=dict(facecolor='white', alpha=0.5), ha='right', va='bottom')
 
     mdl.set_xlabel('aperture radius (as)')
     mdl.set_ylabel('flux (cps)')
@@ -176,9 +195,8 @@ def plot_model_qa(samples,flux,flux_err,imgfn,
             wkr.set_xticks([])
     wkr.set_xlabel("step number");
 
-    imgx = float(ncat.column('NUV_XCENTER')[source_ix].as_py())
-    imgy = float(ncat.column('NUV_YCENTER')[source_ix].as_py())
-    imsz = np.shape(ffull['CNT'])
+    imgx, imgy = impos
+    imsz = np.shape(img)
     boxsz = 150
     x1, x2, y1, y2 = (max(int(imgy - boxsz), 0),
                     min(int(imgy + boxsz), imsz[0]),
@@ -186,10 +204,9 @@ def plot_model_qa(samples,flux,flux_err,imgfn,
                     min(int(imgx + boxsz), imsz[1]))
     x1_,y1_=0,0
 
-    ffull = pdr.read(imgfn)
     # full frame image
     ffi = fig.add_subplot(gs[3:,:3])
-    ffi.imshow(ZScaleInterval()(ffull['CNT']/expt[0]),origin='lower',cmap='Greys')
+    ffi.imshow(ZScaleInterval()(img),origin='lower',cmap='Greys')
     rect = Rectangle((y1 - y1_, x1 - x1_), 2 * boxsz, 2 * boxsz,
                     linewidth=1, edgecolor='y', facecolor='none',ls='solid')
     ffi.add_patch(rect)
@@ -198,11 +215,12 @@ def plot_model_qa(samples,flux,flux_err,imgfn,
 
     # sub frame image
     sfi = fig.add_subplot(gs[3:,3:])
-    plt.imshow(ZScaleInterval()(ffull['CNT'][x1:x2,y1:y2]/expt[0]),origin='lower',cmap='Greys')
-    circ1 = Circle((boxsz, boxsz), 17.5/1.5,
+    plt.imshow(ZScaleInterval()(img[x1:x2,y1:y2]),origin='lower',cmap='Greys')
+    xcen,ycen = boxsz-int(imgx)+imgx,boxsz-int(imgy)+imgy
+    circ1 = Circle((xcen,ycen), 17.5/1.5,
                 linewidth=2, edgecolor='r', facecolor='none', ls='solid')
     sfi.add_patch(circ1)
-    circ2 = Circle((boxsz, boxsz), 9.0/1.5,
+    circ2 = Circle((xcen,ycen), 9.0/1.5,
                 linewidth=1, edgecolor='r', facecolor='none', ls='dotted')
     sfi.add_patch(circ2)
 
