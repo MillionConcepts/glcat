@@ -71,15 +71,16 @@ class CLIOptions:
     stages: Stage
     depth: Optional[int]
     apertures: list[float]
-    local_root: Path
-    remote_root: Optional[str]
     download: bool
     recreate: bool
     verbose: int
     parallel: int
     chunk_size: int
     share_memory: Optional[bool]
+    catalog_root: Path
     aspect_dir: Path
+    eclipse_dir: Path
+    remote_eclipse_dir: Optional[Path]
     print_tracebacks: bool
 
     @classmethod
@@ -107,8 +108,8 @@ class CLIOptions:
         ap.add_argument(
             # https://github.com/python/cpython/issues/59330 and its
             # many duplicates
-            dest="local_root",
-            metavar="local-catalog-root",
+            dest="catalog_root",
+            metavar="catalog-root",
             type=Path,
             help="Root of a local directory tree containing catalog files,"
             " cached raw6 and aspect files, etc.  Must be writable."
@@ -126,12 +127,8 @@ class CLIOptions:
             help="comma-separated list of processing stages (default: all)"
         )
         ap.add_argument(
-            "--remote-root", metavar="DIR",
-            help="alternate location to check for existing raw6 and photonlist files"
-        )
-        ap.add_argument(
-            "--download", action="store_true",
-            help="download raw6 files from MAST as necessary",
+            "--no-download", dest="download", action="store_false",
+            help="do not download missing raw6 files from MAST",
         )
         ap.add_argument(
             "--recreate", action="store_true",
@@ -151,9 +148,19 @@ class CLIOptions:
             " (default: 1,000,000)"
         )
         ap.add_argument(
-            "--aspect-dir", type=Path, default=None,
+            "--aspect-dir", type=Path, default=None, metavar="DIR",
             help="find aspect files in this directory instead of"
-            " <local_root>/aspect"
+            " <local_root>/aspect; does not need to be writable"
+        )
+        ap.add_argument(
+            "--eclipse-dir", type=Path, default=None, metavar="DIR",
+            help="find and store per-eclipse data (raw6 and photonlist files)"
+            " in this directory instead of <local_root>/eclipse; must be writable"
+        )
+        ap.add_argument(
+            "--remote-eclipse-dir", type=Path, default=None, metavar="DIR",
+            help="alternate location to check for per-eclipse data that is"
+            " not already present in <eclipse_dir>; does not need to be writable"
         )
         ap.add_argument(
             "--depth", type=parse_depth, default=DEFAULT_DEPTH,
@@ -188,10 +195,11 @@ class CLIOptions:
 
         ns = ap.parse_args(args)
 
-        if 'aspect_dir' in ns and ns.aspect_dir is not None:
-            aspect_dir = ns.aspect_dir
-        else:
-            aspect_dir = ns.local_root / "aspect"
+        if (aspect_dir := ns.aspect_dir) is None:
+            aspect_dir = ns.catalog_root / "aspect"
+
+        if (eclipse_dir := ns.eclipse_dir) is None:
+            eclipse_dir = ns.catalog_root / "eclipse"
 
         return cls(
             eclipses = ns.eclipse,
@@ -199,15 +207,16 @@ class CLIOptions:
             bands = ns.band,
             depth = ns.depth,
             apertures = ns.aperture,
-            local_root = ns.local_root,
-            remote_root = ns.remote_root,
             download = ns.download,
             recreate = ns.recreate,
             verbose = ns.verbose,
             parallel = ns.parallel,
             chunk_size = ns.chunk_size,
             share_memory = ns.share_memory,
+            catalog_root = ns.catalog_root,
             aspect_dir = aspect_dir,
+            eclipse_dir = eclipse_dir,
+            remote_eclipse_dir = ns.remote_eclipse_dir,
             print_tracebacks = ns.print_tracebacks,
         )
 
@@ -337,8 +346,8 @@ def process_eclipse(eclipse: int, options: CLIOptions):
     if options.stages & Stage.DOWNLOAD:
         stages.download_raw(
             eclipse,
-            local_root=options.local_root,
-            remote_root=options.remote_root,
+            eclipse_dir=options.eclipse_dir,
+            remote_eclipse_dir=options.remote_eclipse_dir,
             bands=options.bands,
             download=options.download,
             recreate=options.recreate,
@@ -347,8 +356,8 @@ def process_eclipse(eclipse: int, options: CLIOptions):
     if options.stages & Stage.BASE_PHOTOMETRY:
         stages.base_photometry(
             eclipse,
-            local_root=options.local_root,
-            remote_root=options.remote_root,
+            eclipse_dir=options.eclipse_dir,
+            remote_eclipse_dir=options.remote_eclipse_dir,
             aspect_dir=options.aspect_dir,
             bands=options.bands,
             depth=options.depth,
@@ -362,8 +371,8 @@ def process_eclipse(eclipse: int, options: CLIOptions):
     if options.stages & Stage.FORCED_PHOTOMETRY:
         stages.forced_photometry(
             eclipse,
-            local_root=options.local_root,
-            remote_root=options.remote_root,
+            eclipse_dir=options.eclipse_dir,
+            remote_eclipse_dir=options.remote_eclipse_dir,
             aspect_dir=options.aspect_dir,
             bands=options.bands,
             depth=options.depth,
@@ -377,8 +386,8 @@ def process_eclipse(eclipse: int, options: CLIOptions):
     if options.stages & Stage.BAND_CATALOG:
         stages.band_catalog(
             eclipse,
-            local_root=options.local_root,
-            remote_root=options.remote_root,
+            eclipse_dir=options.eclipse_dir,
+            remote_eclipse_dir=options.remote_eclipse_dir,
             aspect_dir=options.aspect_dir,
             bands=options.bands,
             recreate=options.recreate,
@@ -387,8 +396,8 @@ def process_eclipse(eclipse: int, options: CLIOptions):
     if options.stages & Stage.MERGED_CATALOG:
         stages.merged_catalog(
             eclipse,
-            local_root=options.local_root,
-            remote_root=options.remote_root,
+            eclipse_dir=options.eclipse_dir,
+            remote_eclipse_dir=options.remote_eclipse_dir,
             aspect_dir=options.aspect_dir,
             recreate=options.recreate,
             verbose=options.verbose,

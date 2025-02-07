@@ -37,7 +37,19 @@ class Band(enum.Flag):
         elif self == Band.FUV:
             return "mof"
         else:
-            raise ValueError("suffix is only defined for single bands")
+            raise ValueError(".suffix is only defined for single bands")
+
+    @property
+    def other(self):
+        """Returns the other band from this band:
+        Band.NUV.other == Band.FUV and vice versa.
+        Raises ValueError if self does not describe a single band."""
+        if self == Band.NUV:
+            return Band.FUV
+        elif self == Band.FUV:
+            return Band.NUV
+        else:
+            raise ValueError(".other is only defined for single bands")
 
     @classmethod
     def parse(cls, s: str) -> 'Band':
