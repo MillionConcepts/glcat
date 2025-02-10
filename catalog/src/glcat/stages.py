@@ -7,9 +7,10 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+from gPhoton.eclipse import raw6_path, photomfile_path
 from gPhoton.io.mast import retrieve_raw6
 from gPhoton.pipeline import execute_pipeline
-from gPhoton.eclipse import raw6_path
+from gPhoton.reference import get_legs
 from glcat.constants import Band, DEFAULT_APERTURES, DEFAULT_DEPTH
 
 
@@ -82,7 +83,7 @@ def base_photometry(
             coregister_lightcurves = True,
             photometry_only = False,
             compression = "rice",
-            suffix = band.suffix,
+            suffix = "base",
             source_catalog_file = None
         )
 
@@ -102,7 +103,41 @@ def forced_photometry(
     chunk_size: int = 1000000,
     share_memory: Optional[bool] = None,
 ):
-    raise NotImplementedError
+    # The source catalog file is used only for source positions,
+    # which will be the same for all apertures, so we arbitrarily
+    # use the first one in the list.
+    fp_src_aperture = aperture_sizes[0]
+
+    for band in bands:
+        for leg in get_legs(eclipse, aspect_dir=aspect_dir):
+            fp_src = photomfile_path(
+                eclipse,
+                leg,
+                band.other.name,
+                "direct",
+                depth = depth,
+                start = None,
+                aperture = fp_src_aperture,
+                suffix = "base",
+            )
+            execute_pipeline(
+                eclipse,
+                band.name,
+                threads = parallel,
+                local_root = eclipse_dir,
+                remote_root = remote_eclipse_dir,
+                aspect_dir = aspect_dir,
+                recreate = recreate,
+                download = False,
+                depth = depth,
+                aperture_sizes = aperture_sizes,
+                write = { "movie": True, "image": True },
+                coregister_lightcurves = True,
+                photometry_only = True,
+                compression = "rice",
+                suffix = "forced",
+                source_catalog_file = eclipse_dir / fp_src
+            )
 
 
 def band_catalog(

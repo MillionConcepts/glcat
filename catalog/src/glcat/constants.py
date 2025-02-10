@@ -29,17 +29,6 @@ class Band(enum.Flag):
             yield Band.FUV
 
     @property
-    def suffix(self):
-        """Returns the movie file suffix for self.  Raises ValueError
-           if self does not describe a single band."""
-        if self == Band.NUV:
-            return "mon"
-        elif self == Band.FUV:
-            return "mof"
-        else:
-            raise ValueError(".suffix is only defined for single bands")
-
-    @property
     def other(self):
         """Returns the other band from this band:
         Band.NUV.other == Band.FUV and vice versa.
