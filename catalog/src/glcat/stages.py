@@ -84,7 +84,8 @@ def base_photometry(
             photometry_only = False,
             compression = "rice",
             suffix = "base",
-            source_catalog_file = None
+            source_catalog_file = None,
+            ftype = "parquet",
         )
 
 
@@ -119,6 +120,7 @@ def forced_photometry(
                 start = None,
                 aperture = fp_src_aperture,
                 suffix = "base",
+                ftype = "parquet",
             )
             execute_pipeline(
                 eclipse,
@@ -136,7 +138,8 @@ def forced_photometry(
                 photometry_only = True,
                 compression = "rice",
                 suffix = "forced",
-                source_catalog_file = eclipse_dir / fp_src
+                source_catalog_file = eclipse_dir / fp_src,
+                ftype = "parquet",
             )
 
 
