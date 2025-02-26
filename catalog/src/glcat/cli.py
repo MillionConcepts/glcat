@@ -119,7 +119,8 @@ class CLIOptions:
             help="Eclipse numbers of eclipses to process.",
         )
         ap.add_argument(
-            "--band", type=Band.parse, default=Band.ALL, metavar="NUV|FUV|both",
+            "--band", type=parse_bands, default=[Band.NUV, Band.FUV],
+            metavar="NUV|FUV|both",
             help="comma-separated list of spectral bands to process",
         )
         ap.add_argument(
