@@ -5,13 +5,14 @@ High-level stages of catalog generation
 import shutil
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
-from gPhoton.eclipse import raw6_path, photomfile_path
+from gPhoton.eclipse import raw6_path, photomfile_path, eclipse_prefix
 from gPhoton.io.mast import retrieve_raw6
 from gPhoton.pipeline import execute_pipeline
 from gPhoton.reference import get_legs
 from glcat.constants import Band, DEFAULT_APERTURES, DEFAULT_DEPTH
+from glcat.cataloging import accumulate_run_data, make_catalog
 
 
 def download_raw(
@@ -147,13 +148,28 @@ def band_catalog(
     eclipse: int,
     *,
     eclipse_dir: Path,
-    remote_eclipse_dir: Optional[str] = None,
     aspect_dir: Optional[str] = None,
     bands: Sequence[Band] = [Band.NUV, Band.FUV],
     recreate: bool = False,
+    depth: Optional[int] = DEFAULT_DEPTH,
+    aperture_sizes: list[float] = DEFAULT_APERTURES,
     verbose: int = 0,
 ):
-    raise NotImplementedError
+    for leg in get_legs(eclipse, aspect_dir=aspect_dir):
+        data = accumulate_run_data(
+            eclipse,
+            leg,
+            eclipse_dir = eclipse_dir,
+            aspect_dir = aspect_dir,
+            depth = depth,
+            aperture_sizes = aperture_sizes,
+        )
+        for band in bands:
+            d, p = eclipse_prefix(eclipse, band.name, "direct", False)
+            catalog_path = eclipse_dir / d / f"{p}-{leg}-catalog.parquet"
+            if recreate or not catalog_path.exists():
+                make_catalog(data, band, verbose).to_parquet(catalog_path)
+
 
 
 def merged_catalog(

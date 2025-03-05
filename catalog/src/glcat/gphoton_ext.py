@@ -9,10 +9,11 @@ Material that should be merged into gphoton proper
 
 import numpy as np
 
-from constants import Band
+from numpy.typing import ArrayLike
+from glcat.constants import Band
 
 
-def counts2mag(cps: np.typing.ArrayLike, band: Band) -> np.ndarray:
+def counts2mag(cps: ArrayLike, band: Band) -> np.ndarray:
     """
     Converts GALEX counts per second to AB magnitudes.
         See: http://asd.gsfc.nasa.gov/archive/galex/FAQ/counts_background.html
@@ -36,7 +37,7 @@ def counts2mag(cps: np.typing.ArrayLike, band: Band) -> np.ndarray:
         return -2.5 * np.log10(cps) + band.mag_scale
 
 
-def counts2flux(cps: np.typing.ArrayLike, band: Band) -> np.ndarray:
+def counts2flux(cps: ArrayLike, band: Band) -> np.ndarray:
     """
     Converts GALEX counts per second to flux (erg sec^-1 cm^-2 A^-1).
         See: http://asd.gsfc.nasa.gov/archive/galex/FAQ/counts_background.html

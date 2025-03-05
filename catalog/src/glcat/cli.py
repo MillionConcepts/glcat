@@ -17,9 +17,10 @@ from gPhoton.reference import check_eclipse
 from glcat import stages
 from glcat.constants import (
     Band,
-    DEFAULT_DEPTH,
+    parse_bands,
+    ALL_APERTURES,
     DEFAULT_APERTURES,
-    ALL_APERTURES
+    DEFAULT_DEPTH,
 )
 
 
@@ -388,7 +389,6 @@ def process_eclipse(eclipse: int, options: CLIOptions):
         stages.band_catalog(
             eclipse,
             eclipse_dir=options.eclipse_dir,
-            remote_eclipse_dir=options.remote_eclipse_dir,
             aspect_dir=options.aspect_dir,
             bands=options.bands,
             recreate=options.recreate,
@@ -398,7 +398,6 @@ def process_eclipse(eclipse: int, options: CLIOptions):
         stages.merged_catalog(
             eclipse,
             eclipse_dir=options.eclipse_dir,
-            remote_eclipse_dir=options.remote_eclipse_dir,
             aspect_dir=options.aspect_dir,
             recreate=options.recreate,
             verbose=options.verbose,
