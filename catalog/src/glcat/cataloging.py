@@ -3,11 +3,13 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pandas as pd
 
+# "import pyarrow as pa" does *not* make submodules available as pa.foo
 import pyarrow
+import pyarrow.compute
 import pyarrow.csv
 import pyarrow.parquet
+pc = pyarrow.compute
 
 from gPhoton.eclipse import photomfile_path, expfile_path
 from glcat.constants import Band, DEFAULT_APERTURES
@@ -45,7 +47,7 @@ def exposure_times_for_catalog(
             start = None,
         )
         exp_data = pyarrow.csv.read_csv(exp_path, convert_options = options)
-        expt[band] = exp_data["expt"].to_numpy().sum()
+        expt[band] = pc.sum(exp_data["expt"]).as_py()
 
     return expt
 
@@ -58,7 +60,7 @@ def photometry_for_catalog(
     eclipse_dir: Path,
     band: Band,
     suffix: str,
-) -> dict[float, pd.DataFrame]:
+) -> dict[float, pyarrow.Table]:
     return {
         ap: pyarrow.parquet.read_table(
             eclipse_dir / photomfile_path(
@@ -71,8 +73,13 @@ def photometry_for_catalog(
                 aperture = ap,
                 suffix = suffix,
                 ftype = "parquet"
-            )
-        ).to_pandas()
+            ),
+            columns = [
+                "ra", "dec", "extended_source", "xcenter", "ycenter",
+                "aperture_sum", "aperture_sum_mask", "aperture_sum_edge",
+            ]
+        ).sort_by([("ra","ascending"),
+                   ("dec","ascending")])
         for ap in aperture_sizes
     }
 
@@ -133,47 +140,57 @@ def make_band_catalog(
 
     # construct the catalog table from:
     # eclipse-wide metadata
-    columns = [
-        pd.Series(data=np.full(nrows, obstype), name="OBSTYPE"),
-        pd.Series(data=np.full(nrows, eclipse), name="ECLIPSE"),
-        pd.Series(data=np.full(nrows, leg), name="LEG"),
-    ]
+    columns = {
+        "OBSTYPE": np.full(nrows, obstype),
+        "ECLIPSE": np.full(nrows, eclipse),
+        "LEG":     np.full(nrows, leg),
+    }
     for i, ap in enumerate(aperture_sizes):
-        columns.append(pd.Series(name=f'APER_{i}', data=np.full(nrows, ap)))
+        columns[f"APER_{i}"] = np.full(nrows, ap)
 
     # sky position of sources - same for both bands
-    columns.append(ix_base[["ra", "dec"]])
+    columns["RA"] = ix_base["ra"]
+    columns["DEC"] = ix_base["dec"]
     # extended source tag - only available for base photometry
-    columns.append(ix_base["extended_source"].rename(f'{band}_EXTENDED'))
+    columns[f"{b_base}_EXTENDED"] = ix_base["extended_source"]
 
     # photometric centers and exposure time for this band
-    columns.append(ix_base[["xcenter", "ycenter"]].add_prefix(p_base))
-    columns.append(pd.Series(
-        data=np.full(nrows, exposure_times[b_base]),
-        name=f'{b_base}_EXPT'
-    ))
+    columns[f"{b_base}_XCENTER"] = ix_base["xcenter"]
+    columns[f"{b_base}_YCENTER"] = ix_base["ycenter"]
+    columns[f"{b_base}_EXPT"]    = np.full(nrows, exposure_times[b_base])
+
     # photometric data for this band
-    columns.extend(
-        aper_photometry(exposure_times[b_base], b_base, i, ph_base[ap])
-        for i, ap in enumerate(aperture_sizes)
-    )
+    for i, ap in enumerate(aperture_sizes):
+        phot = ph_base[ap]
+        assert pc.all(pc.equal(phot["ra"], ix_base["ra"]))
+        assert pc.all(pc.equal(phot["dec"], ix_base["dec"]))
+        columns.update(
+            aper_photometry(exposure_times[b_base], b_base, i, phot)
+        )
 
     # photometric centers for the other band
-    columns.append(ix_forced[["xcenter", "ycenter"]].add_prefix(p_forced))
-    columns.append(pd.Series(
-        data=np.full(nrows, exposure_times[band.other]),
-        name=f'{band.other}_EXPT'
-    ))
+    columns[f"{b_forced}_XCENTER"] = ix_forced["xcenter"]
+    columns[f"{b_forced}_YCENTER"] = ix_forced["ycenter"]
+    columns[f"{b_forced}_EXPT"]    = np.full(nrows, exposure_times[b_forced])
 
     # photometric data for the other band
-    columns.extend(
-        aper_photometry(exposure_times[b_forced], b_forced, i, ph_forced[ap])
-        for i, ap in enumerate(aperture_sizes)
-    )
+    for i, ap in enumerate(aperture_sizes):
+        phot = ph_forced[ap]
+        # intentionally comparing sky positions to the base index
+        assert pc.all(pc.equal(phot["ra"], ix_base["ra"]))
+        assert pc.all(pc.equal(phot["dec"], ix_base["dec"]))
+        columns.update(
+            aper_photometry(exposure_times[b_forced], b_forced, i, phot)
+        )
 
-    # and that's all
-    pd.concat(columns, axis=1).rename(columns=str.upper).to_parquet(
-        catalog_path
+    # and that's all! write out the table.
+    catalog_table = pyarrow.Table.from_pydict(columns)
+    pyarrow.parquet.write_table(
+        catalog_table,
+        catalog_path,
+        # maximize interop with other parquet readers
+        version="1.0",
+        store_schema=False
     )
 
 
@@ -181,24 +198,25 @@ def aper_photometry(
     exposure_time: float,
     band: Band,
     aper_ix: int,
-    phot: pd.DataFrame,
-) -> pd.DataFrame:
-    cps = phot['aperture_sum'] / exposure_time
-    cps_err = np.sqrt(phot['aperture_sum']) / exposure_time
+    phot: pyarrow.Table,
+) -> dict[str, np.ndarray]:
+    count = phot['aperture_sum'].to_numpy()
+    cps = count / exposure_time
+    cps_err = np.sqrt(count) / exposure_time
 
     mag = counts2mag(cps, band)
     mag_err_upper = np.abs(counts2mag(cps - cps_err, band) - mag)
     mag_err_lower = np.abs(counts2mag(cps + cps_err, band) - mag)
 
-    return pd.DataFrame({
-        "SUM": phot["aperture_sum"],
-        "EDGE": (phot["aperture_sum_edge"] != 0).astype(np.int8),
-        "MASK": (phot["aperture_sum_mask"] != 0).astype(np.int8),
-        "CPS": cps,
-        "CPS_ERR": cps_err,
-        "FLUX": counts2flux(cps, band),
-        "FLUX_ERR": counts2flux(cps_err, band),
-        "MAG": mag,
-        "MAG_ERR_UPPER": mag_err_upper,
-        "MAG_ERR_LOWER": mag_err_lower,
-    }).add_prefix(f'{band}_').add_suffix(f'_A{aper_ix}')
+    return {
+        f"{band}_SUM_A{aper_ix}":           count,
+        f"{band}_EDGE_A{aper_ix}":          pc.not_equal(phot["aperture_sum_edge"], 0),
+        f"{band}_MASK_A{aper_ix}":          pc.not_equal(phot["aperture_sum_mask"], 0),
+        f"{band}_CPS_A{aper_ix}":           cps,
+        f"{band}_CPS_ERR_A{aper_ix}":       cps_err,
+        f"{band}_FLUX_A{aper_ix}":          counts2flux(cps, band),
+        f"{band}_FLUX_ERR_A{aper_ix}":      counts2flux(cps_err, band),
+        f"{band}_MAG_A{aper_ix}":           mag,
+        f"{band}_MAG_ERR_UPPER_A{aper_ix}": mag_err_upper,
+        f"{band}_MAG_ERR_LOWER_A{aper_ix}": mag_err_lower,
+    }
