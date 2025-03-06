@@ -7,12 +7,13 @@ import shutil
 from pathlib import Path
 from typing import Optional, Sequence
 
+from gPhoton.aspect import aspect_tables
 from gPhoton.eclipse import raw6_path, photomfile_path, eclipse_prefix
 from gPhoton.io.mast import retrieve_raw6
 from gPhoton.pipeline import execute_pipeline
 from gPhoton.reference import get_legs
 from glcat.constants import Band, DEFAULT_APERTURES, DEFAULT_DEPTH
-from glcat.cataloging import accumulate_run_data, make_catalog
+from glcat.cataloging import exposure_times_for_catalog, make_band_catalog
 
 
 def download_raw(
@@ -155,21 +156,33 @@ def band_catalog(
     aperture_sizes: list[float] = DEFAULT_APERTURES,
     verbose: int = 0,
 ):
+    metadata = aspect_tables(eclipse, "metadata", aspect_dir=aspect_dir)[0]
+    obstypes = set(s.as_py() for s in metadata["obstype"])
+    obstype = obstypes.pop()
+    assert not obstypes
+
     for leg in get_legs(eclipse, aspect_dir=aspect_dir):
-        data = accumulate_run_data(
-            eclipse,
-            leg,
-            eclipse_dir = eclipse_dir,
-            aspect_dir = aspect_dir,
-            depth = depth,
-            aperture_sizes = aperture_sizes,
+        # We always need the exposure time for both bands for each leg.
+        exposure_times = exposure_times_for_catalog(
+            eclipse, leg, depth=depth, eclipse_dir=eclipse_dir
         )
+
         for band in bands:
             d, p = eclipse_prefix(eclipse, band.name, "direct", False)
             catalog_path = eclipse_dir / d / f"{p}-{leg}-catalog.parquet"
             if recreate or not catalog_path.exists():
-                make_catalog(data, band, verbose).to_parquet(catalog_path)
-
+                make_band_catalog(
+                    catalog_path,
+                    eclipse = eclipse,
+                    leg = leg,
+                    band = band,
+                    obstype = obstype,
+                    eclipse_dir = eclipse_dir,
+                    depth = depth,
+                    aperture_sizes = aperture_sizes,
+                    exposure_times = exposure_times,
+                    verbose = verbose
+                )
 
 
 def merged_catalog(
