@@ -4,7 +4,7 @@ import os
 import sys
 from typing import Optional
 from backplanes import make_backplanes
-from retired.psf_fitting import run_psf_compare
+from notebooks_and_retired_scripts.psf_fitting import run_psf_compare
 from compare_aspect.plots import make_plots
 import pandas as pd
 sys.path.append('/home/bekah/gphoton_working')

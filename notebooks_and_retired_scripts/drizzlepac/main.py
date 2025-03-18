@@ -66,7 +66,7 @@ def drizzle_demo_one(reference, outfile, infiles):
 
 
 def run_tweak_reg(infiles):
-    from retired.drizzlepac import tweakreg
+    from notebooks_and_retired_scripts.drizzlepac import tweakreg
     tweakreg.TweakReg(infiles,
                       use_custom_catalogs=True,
                       threshold=0.75,
@@ -88,7 +88,7 @@ def run_tweak_reg(infiles):
 
 def run_drizzle(infiles):
     # run astrodrizzle with a list of images
-    from retired.drizzlepac import astrodrizzle
+    from notebooks_and_retired_scripts.drizzlepac import astrodrizzle
     astrodrizzle.AstroDrizzle(
         input=('/home/bekah/gphoton_working/test_data/e09869/files/e09869-nd-t0001-b00-f0001-g_dose_WCS.fits',
         '/home/bekah/gphoton_working/test_data/e09869/files/e09869-nd-t0001-b00-f0002-g_dose_WCS.fits',

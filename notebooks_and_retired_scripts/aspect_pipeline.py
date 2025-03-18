@@ -4,13 +4,13 @@
 # the backplanes are pre-produced
 import sys
 from slew_aspect_correction.main import slew_frame_pipeline
-from retired.filenames import get_slew_frame_files, get_normal_frame_files, get_main_files
+from notebooks_and_retired_scripts.filenames import get_slew_frame_files, get_normal_frame_files, get_main_files
 from astropy.io import fits
 from pyarrow import parquet
-from retired.xylist_runs import get_stars
+from notebooks_and_retired_scripts.xylist_runs import get_stars
 from aspect_correction.combine_wcs import execute_combine
-from retired.main_compare_asp import write_aspect2
-from retired.xylist_runs import run_astrometry_net
+from notebooks_and_retired_scripts.main_compare_asp import write_aspect2
+from notebooks_and_retired_scripts.xylist_runs import run_astrometry_net
 from tools.retrieve import get_eclipse_data
 from backplanes import make_backplanes, dosemaps_just_for_timestamps
 sys.path.append('/home/bekah/gPhoton2')

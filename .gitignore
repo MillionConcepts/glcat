@@ -11,3 +11,4 @@ __pycache__/
 \#*#
 .#*
 .*.sw[a-p]
+/notebooks_and_retired_scripts/notebooks/fuv_offset_pics/
