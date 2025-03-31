@@ -137,7 +137,7 @@ class CLIOptions:
             help="erase and re-create any outputs that already exist",
         )
         ap.add_argument(
-            "--verbose", "-v", action="count",
+            "--verbose", "-v", action="count", default=0,
             help="be more verbose (repeat for even more detail)",
         )
         ap.add_argument(
