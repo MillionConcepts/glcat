@@ -25,7 +25,7 @@ def download_raw(
     download: bool = True,
     recreate: bool = False,
     verbose: int = 0,
-):
+) -> None:
     for band in bands:
         raw6_relpath = raw6_path(eclipse, band.name, "direct")
         raw6_local = eclipse_dir / raw6_relpath
@@ -48,10 +48,13 @@ def download_raw(
         if download:
             print(f"eclipse {eclipse} band {band.name}:"
                   f" downloading {raw6_local} from MAST")
-            retrieve_raw6(eclipse, band.name, raw6_local)
-        else:
-            print(f"eclipse {eclipse} band {band.name}:"
-                  f" {raw6_local} not available")
+            try:
+                retrieve_raw6(eclipse, band.name, raw6_local)
+                continue
+            except ValueError:
+                pass
+        print(f"eclipse {eclipse} band {band.name}:"
+              f" {raw6_local} not available")
 
 
 def base_photometry(
@@ -68,8 +71,15 @@ def base_photometry(
     parallel: int = 1,
     chunk_size: int = 1000000,
     share_memory: Optional[bool] = None,
-):
+) -> None:
     for band in bands:
+        raw6_relpath = raw6_path(eclipse, band.name, "direct")
+        raw6_local = eclipse_dir / raw6_relpath
+        if not raw6_local.exists():
+            print(f"eclipse {eclipse} band {band.name}:"
+                  f" {raw6_local} not available, skipping base photometry")
+            continue
+
         execute_pipeline(
             eclipse,
             band.name,
@@ -84,6 +94,8 @@ def base_photometry(
             write = { "movie": True, "image": True },
             coregister_lightcurves = True,
             photometry_only = False,
+            extended_photonlist = True,
+            extended_flagging = True,
             compression = "rice",
             suffix = "base",
             source_catalog_file = None,
@@ -105,13 +117,19 @@ def forced_photometry(
     parallel: int = 1,
     chunk_size: int = 1000000,
     share_memory: Optional[bool] = None,
-):
+) -> None:
     # The source catalog file is used only for source positions,
     # which will be the same for all apertures, so we arbitrarily
     # use the first one in the list.
     fp_src_aperture = aperture_sizes[0]
 
     for band in bands:
+        raw6_relpath = raw6_path(eclipse, band.name, "direct")
+        raw6_local = eclipse_dir / raw6_relpath
+        if not raw6_local.exists():
+            print(f"eclipse {eclipse} band {band.name}:"
+                  f" {raw6_local} not available, skipping forced photometry")
+            continue
         for leg in get_legs(eclipse, aspect_dir=aspect_dir):
             fp_src = photomfile_path(
                 eclipse,
@@ -124,6 +142,11 @@ def forced_photometry(
                 suffix = "base",
                 ftype = "parquet",
             )
+            if not fp_src.exists():
+                print(f"eclipse {eclipse} band {band.name} leg {leg}:"
+                      f" {fp_src} not available, skipping forced photometry")
+                continue
+
             execute_pipeline(
                 eclipse,
                 band.name,
@@ -138,6 +161,7 @@ def forced_photometry(
                 write = { "movie": True, "image": True },
                 coregister_lightcurves = True,
                 photometry_only = True,
+                extended_photonlist = True,
                 compression = "rice",
                 suffix = "forced",
                 source_catalog_file = eclipse_dir / fp_src,
@@ -155,7 +179,7 @@ def band_catalog(
     depth: Optional[int] = DEFAULT_DEPTH,
     aperture_sizes: list[float] = DEFAULT_APERTURES,
     verbose: int = 0,
-):
+) -> None:
     metadata = aspect_tables(eclipse, "metadata", aspect_dir=aspect_dir)[0]
     obstypes = set(s.as_py() for s in metadata["obstype"])
     obstype = obstypes.pop()

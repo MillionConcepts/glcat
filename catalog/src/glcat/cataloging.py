@@ -46,8 +46,13 @@ def exposure_times_for_catalog(
             depth = depth,
             start = None,
         )
-        exp_data = pyarrow.csv.read_csv(exp_path, convert_options = options)
-        expt[band] = pc.sum(exp_data["expt"]).as_py()
+        try:
+            exp_data = pyarrow.csv.read_csv(exp_path, convert_options = options)
+            expt[band] = pc.sum(exp_data["expt"]).as_py()
+        except FileNotFoundError:
+            print(f"eclipse {eclipse} band {band}: "
+                  f"exposure time table {exp_path} not found")
+            expt[band] = 0
 
     return expt
 
@@ -61,27 +66,41 @@ def photometry_for_catalog(
     band: Band,
     suffix: str,
 ) -> dict[float, pyarrow.Table]:
-    return {
-        ap: pyarrow.parquet.read_table(
-            eclipse_dir / photomfile_path(
-                eclipse,
-                leg,
-                band.name,
-                mode = "direct",
-                depth = depth,
-                start = None,
-                aperture = ap,
-                suffix = suffix,
-                ftype = "parquet"
-            ),
-            columns = [
-                "ra", "dec", "extended_source", "xcenter", "ycenter",
-                "aperture_sum", "aperture_sum_mask", "aperture_sum_edge",
-            ]
-        ).sort_by([("ra","ascending"),
-                   ("dec","ascending")])
-        for ap in aperture_sizes
-    }
+    photometry: dict[float, pyarrow.Table] = {}
+    for ap in aperture_sizes:
+        src = eclipse_dir / photomfile_path(
+            eclipse,
+            leg,
+            band.name,
+            mode = "direct",
+            depth = depth,
+            start = None,
+            aperture = ap,
+            suffix = suffix,
+            ftype = "parquet"
+        )
+        if src.exists():
+            photometry[ap] = pyarrow.parquet.read_table(
+                src,
+                columns = [
+                    "ra", "dec", "extended_source", "xcenter", "ycenter",
+                    "aperture_sum", "artifact_flag",
+                ]
+            ).sort_by([("ra","ascending"),
+                       ("dec","ascending")])
+        else:
+            print(f"eclipse {eclipse} band {band} aperture {ap}: "
+                  f"photomfile {src} not found")
+            photometry[ap] = pyarrow.Table.from_pydict({
+                "ra": [],
+                "dec": [],
+                "extended_source": [],
+                "xcenter": [],
+                "ycenter": [],
+                "aperture_sum": [],
+                "artifact_flag": [],
+            })
+    return photometry
 
 
 def make_band_catalog(
@@ -136,7 +155,9 @@ def make_band_catalog(
     ix_forced = ph_forced[aperture_sizes[0]]
 
     nrows = len(ix_base)
-    assert len(ix_forced) == nrows
+    if nrows == 0:
+        return
+    assert len(ix_forced) in (0, nrows)
 
     # construct the catalog table from:
     # eclipse-wide metadata
@@ -168,20 +189,39 @@ def make_band_catalog(
             aper_photometry(exposure_times[b_base], b_base, i, phot)
         )
 
-    # photometric centers for the other band
-    columns[f"{b_forced}_XCENTER"] = ix_forced["xcenter"]
-    columns[f"{b_forced}_YCENTER"] = ix_forced["ycenter"]
-    columns[f"{b_forced}_EXPT"]    = np.full(nrows, exposure_times[b_forced])
+    if len(ix_forced) == nrows:
+        # photometric centers for the other band
+        columns[f"{b_forced}_XCENTER"] = ix_forced["xcenter"]
+        columns[f"{b_forced}_YCENTER"] = ix_forced["ycenter"]
+        columns[f"{b_forced}_EXPT"] = np.full(nrows, exposure_times[b_forced])
 
-    # photometric data for the other band
-    for i, ap in enumerate(aperture_sizes):
-        phot = ph_forced[ap]
-        # intentionally comparing sky positions to the base index
-        assert pc.all(pc.equal(phot["ra"], ix_base["ra"]))
-        assert pc.all(pc.equal(phot["dec"], ix_base["dec"]))
-        columns.update(
-            aper_photometry(exposure_times[b_forced], b_forced, i, phot)
-        )
+        # photometric data for the other band
+        for i, ap in enumerate(aperture_sizes):
+            phot = ph_forced[ap]
+            # intentionally comparing sky positions to the base index
+            assert pc.all(pc.equal(phot["ra"], ix_base["ra"]))
+            assert pc.all(pc.equal(phot["dec"], ix_base["dec"]))
+            columns.update(
+                aper_photometry(exposure_times[b_forced], b_forced, i, phot)
+            )
+
+    else:
+        # no data available for the other band, fill in blank columns
+        nulls = pyarrow.nulls
+        columns[f"{b_forced}_XCENTER"] = nulls(nrows)
+        columns[f"{b_forced}_YCENTER"] = nulls(nrows)
+        columns[f"{b_forced}_EXPT"]    = nulls(nrows)
+        for i, ap in enumerate(aperture_sizes):
+            columns[f"{b_forced}_SUM_A{i}"]           = nulls(nrows)
+            columns[f"{b_forced}_FLAG_A{i}"]          = nulls(nrows)
+            columns[f"{b_forced}_CPS_A{i}"]           = nulls(nrows)
+            columns[f"{b_forced}_CPS_ERR_A{i}"]       = nulls(nrows)
+            columns[f"{b_forced}_FLUX_A{i}"]          = nulls(nrows)
+            columns[f"{b_forced}_FLUX_ERR_A{i}"]      = nulls(nrows)
+            columns[f"{b_forced}_MAG_A{i}"]           = nulls(nrows)
+            columns[f"{b_forced}_MAG_ERR_UPPER_A{i}"] = nulls(nrows)
+            columns[f"{b_forced}_MAG_ERR_LOWER_A{i}"] = nulls(nrows)
+
 
     # and that's all! write out the table.
     catalog_table = pyarrow.Table.from_pydict(columns)
@@ -210,8 +250,7 @@ def aper_photometry(
 
     return {
         f"{band}_SUM_A{aper_ix}":           count,
-        f"{band}_EDGE_A{aper_ix}":          pc.not_equal(phot["aperture_sum_edge"], 0),
-        f"{band}_MASK_A{aper_ix}":          pc.not_equal(phot["aperture_sum_mask"], 0),
+        f"{band}_FLAG_A{aper_ix}":          phot["artifact_flag"].to_numpy(),
         f"{band}_CPS_A{aper_ix}":           cps,
         f"{band}_CPS_ERR_A{aper_ix}":       cps_err,
         f"{band}_FLUX_A{aper_ix}":          counts2flux(cps, band),
