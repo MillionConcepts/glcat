@@ -142,9 +142,10 @@ def forced_photometry(
                 suffix = "base",
                 ftype = "parquet",
             )
-            if not fp_src.exists():
+            src = eclipse_dir / fp_src
+            if not src.exists():
                 print(f"eclipse {eclipse} band {band.name} leg {leg}:"
-                      f" {fp_src} not available, skipping forced photometry")
+                      f" {src} not available, skipping forced photometry")
                 continue
 
             execute_pipeline(
