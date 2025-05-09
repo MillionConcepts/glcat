@@ -248,14 +248,25 @@ def aper_photometry(
     mag_err_upper = np.abs(counts2mag(cps - cps_err, band) - mag)
     mag_err_lower = np.abs(counts2mag(cps + cps_err, band) - mag)
 
+    # dividing artifact flags into individual flags
+    artifact_flags = phot['artifact_flag'].to_numpy()
+    hotspot_flag = ((artifact_flags & 1) > 0).astype(int)
+    ghost_flag = ((artifact_flags & 2) > 0).astype(int)
+    soft_edge_flag = ((artifact_flags & 4) > 0).astype(int)
+    hard_edge_flag = ((artifact_flags & 8) > 0).astype(int)
+
     return {
-        f"{band}_SUM_A{aper_ix}":           count,
-        f"{band}_FLAG_A{aper_ix}":          phot["artifact_flag"].to_numpy(),
-        f"{band}_CPS_A{aper_ix}":           cps,
-        f"{band}_CPS_ERR_A{aper_ix}":       cps_err,
-        f"{band}_FLUX_A{aper_ix}":          counts2flux(cps, band),
-        f"{band}_FLUX_ERR_A{aper_ix}":      counts2flux(cps_err, band),
-        f"{band}_MAG_A{aper_ix}":           mag,
+        f"{band}_SUM_A{aper_ix}": count,
+        f"{band}_CPS_A{aper_ix}": cps,
+        f"{band}_CPS_ERR_A{aper_ix}": cps_err,
+        f"{band}_FLUX_A{aper_ix}": counts2flux(cps, band),
+        f"{band}_FLUX_ERR_A{aper_ix}": counts2flux(cps_err, band),
+        f"{band}_MAG_A{aper_ix}": mag,
         f"{band}_MAG_ERR_UPPER_A{aper_ix}": mag_err_upper,
         f"{band}_MAG_ERR_LOWER_A{aper_ix}": mag_err_lower,
+        f"{band}_HOTSPOT_FLAG_A{aper_ix}": hotspot_flag,
+        f"{band}_GHOST_FLAG_A{aper_ix}": ghost_flag,
+        f"{band}_SOFTEDGE_FLAG_A{aper_ix}": soft_edge_flag,
+        f"{band}_HARDEDGE_FLAG_A{aper_ix}": hard_edge_flag,
+
     }
