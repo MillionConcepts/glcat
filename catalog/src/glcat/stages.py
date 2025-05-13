@@ -167,6 +167,7 @@ def forced_photometry(
                 suffix = "forced",
                 source_catalog_file = eclipse_dir / fp_src,
                 ftype = "parquet",
+                single_leg = leg
             )
 
 

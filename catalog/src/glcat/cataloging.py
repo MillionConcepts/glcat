@@ -157,7 +157,7 @@ def make_band_catalog(
     nrows = len(ix_base)
     if nrows == 0:
         return
-    assert len(ix_forced) in (0, nrows)
+    assert len(ix_forced) in (0, nrows), f"for {leg}, {len(ix_forced)} vs {len(ix_base)}"
 
     # construct the catalog table from:
     # eclipse-wide metadata
