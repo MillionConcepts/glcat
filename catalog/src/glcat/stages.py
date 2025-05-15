@@ -131,7 +131,7 @@ def forced_photometry(
                   f" {raw6_local} not available, skipping forced photometry")
             continue
         for leg in get_legs(eclipse, aspect_dir=aspect_dir):
-            fp_src = photomfile_path(
+            fp_src_other = photomfile_path(
                 eclipse,
                 leg,
                 band.other.name,
@@ -142,8 +142,20 @@ def forced_photometry(
                 suffix = "base",
                 ftype = "parquet",
             )
+            fp_src = photomfile_path(
+                eclipse,
+                leg,
+                band.name,
+                "direct",
+                depth = depth,
+                start = None,
+                aperture = fp_src_aperture,
+                suffix = "base",
+                ftype = "parquet",
+            )
             src = eclipse_dir / fp_src
-            if not src.exists():
+            src_other = eclipse_dir / fp_src_other
+            if not src.exists() or not src_other.exists():
                 print(f"eclipse {eclipse} band {band.name} leg {leg}:"
                       f" {src} not available, skipping forced photometry")
                 continue
@@ -165,7 +177,7 @@ def forced_photometry(
                 extended_photonlist = True,
                 compression = "rice",
                 suffix = "forced",
-                source_catalog_file = eclipse_dir / fp_src,
+                source_catalog_file = src_other,
                 ftype = "parquet",
                 single_leg = leg
             )
