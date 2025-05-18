@@ -79,26 +79,24 @@ def photometry_for_catalog(
             suffix = suffix,
             ftype = "parquet"
         )
+        columns = [
+            "ra", "dec", "extended_source", "xcenter", "ycenter",
+            "aperture_sum", "artifact_flag"
+        ]
+        if suffix == "base":
+            columns.extend(["ya_aperture_sum", "stdcolrow_aperture_sum"])
+
         if src.exists():
             photometry[ap] = pyarrow.parquet.read_table(
                 src,
-                columns = [
-                    "ra", "dec", "extended_source", "xcenter", "ycenter",
-                    "aperture_sum", "artifact_flag",
-                ]
-            ).sort_by([("ra","ascending"),
-                       ("dec","ascending")])
+                columns=columns
+            ).sort_by([("ra", "ascending"),
+                       ("dec", "ascending")])
         else:
             print(f"eclipse {eclipse} band {band} aperture {ap}: "
                   f"photomfile {src} not found")
             photometry[ap] = pyarrow.Table.from_pydict({
-                "ra": [],
-                "dec": [],
-                "extended_source": [],
-                "xcenter": [],
-                "ycenter": [],
-                "aperture_sum": [],
-                "artifact_flag": [],
+                col: [] for col in columns
             })
     return photometry
 
@@ -188,6 +186,9 @@ def make_band_catalog(
         columns.update(
             aper_photometry(exposure_times[b_base], b_base, i, phot)
         )
+        columns.update(
+            aper_alt(b_base, i, phot)
+        )
 
     if len(ix_forced) == nrows:
         # photometric centers for the other band
@@ -240,6 +241,7 @@ def aper_photometry(
     aper_ix: int,
     phot: pyarrow.Table,
 ) -> dict[str, np.ndarray]:
+
     count = phot['aperture_sum'].to_numpy()
     cps = count / exposure_time
     cps_err = np.sqrt(count) / exposure_time
@@ -270,3 +272,19 @@ def aper_photometry(
         f"{band}_HARDEDGE_FLAG_A{aper_ix}": hard_edge_flag,
 
     }
+
+
+def aper_alt(
+    band: Band,
+    aper_ix: int,
+    phot: pyarrow.Table,
+) -> dict[str, np.ndarray]:
+
+    ya_photom = phot['ya_aperture_sum'].to_numpy()
+    stdcolrow_photom = phot['stdcolrow_aperture_sum'].to_numpy()
+
+    return {
+        f"{band}_YA_A{aper_ix}": ya_photom,
+        f"{band}_COLROWSTD_A{aper_ix}": stdcolrow_photom
+    }
+
