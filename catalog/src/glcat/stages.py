@@ -94,12 +94,13 @@ def base_photometry(
             write = { "movie": True, "image": True },
             coregister_lightcurves = True,
             photometry_only = False,
-            extended_photonlist = True,
+            extended_photonlist = False,
             extended_flagging = True,
             compression = "rice",
             suffix = "base",
             source_catalog_file = None,
             ftype = "parquet",
+            photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row')
         )
 
 
