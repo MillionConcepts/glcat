@@ -285,6 +285,6 @@ def aper_alt(
 
     return {
         f"{band}_YA_A{aper_ix}": ya_photom,
-        f"{band}_COLROWSTD_A{aper_ix}": stdcolrow_photom
+        f"{band}_SIGDISP_A{aper_ix}": stdcolrow_photom
     }
 

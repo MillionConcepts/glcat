@@ -7,7 +7,7 @@ from functools import total_ordering
 from typing import Sequence
 
 #: All the aperture sizes used during the GALEX mission.
-ALL_APERTURES = [ 1.5, 2.3, 3.8, 6.0, 9.0, 12.8, 17.3, 30., 60., 90., ]
+ALL_APERTURES = [ 1.5, 2.3, 3.8, 6.0, 9.0, 12.8, 17.3, 30.]
 
 #: Default set of aperture sizes to use for photometry.
 DEFAULT_APERTURES = ALL_APERTURES
