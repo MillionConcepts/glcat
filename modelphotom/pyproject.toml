@@ -1,0 +1,16 @@
+[project]
+name = "modelphotom"
+version = "0.0.1"
+description = "curve fit for photometry"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pyarrow",
+    "pandas"
+]
+[project.scripts]
+modelphotom = "modelphotom.cli:main"
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
