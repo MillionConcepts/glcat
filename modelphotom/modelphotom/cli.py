@@ -134,7 +134,8 @@ def main():
         print("You need inputs silly!")
         print("modelphotom <eclipse:int> <leg:int> <band:str> <input_dir> <output_dir>")
         sys.exit(1) # don't give error traceback
-    eclipse = int(sys.argv[1])
+    eclipse = sys.argv[1]
+    eclipse = str(eclipse).zfill(5)
     # the catalog files are not padded with 0s in front of leg number
     leg = int(sys.argv[2])
     band = sys.argv[3].lower()
