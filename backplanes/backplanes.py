@@ -259,26 +259,12 @@ def write_backplane_file(
     image, ctx, start_time, tranges=None, wcs=None, name="", frame="movie", time_stamp=0):
     if frame == 'image':
         fn = ctx()['image']
-        #TODO: get rid of this replacement after fuv run
-        estring = str(ctx.eclipse).zfill(5)
-        fn = fn.replace(f'e{estring}/', '')
+
 
     else:
         #fNNNNdd_tNNNNdd
         fn = ctx(frame=frame)['movie']
 
-        estring = str(ctx.eclipse).zfill(5)
-        fn = fn.replace(f'e{estring}/', '')
-
-        split_time = str(time_stamp).split('.')
-        N = split_time[0].zfill(4)
-        # first 4 of decimal place
-        d = split_time[1][:4]
-        fn = fn.replace('movie', f't{N}{d}')
-    fn = fn.replace('.fits.gz', f'_{name}.fits')
-    for ext in ('', '.gz'):
-        if Path(ctx.eclipse_path(), fn + ext).exists():
-            Path(fn + ext).unlink()
     header = stub_header(ctx.band, wcs, tranges)
     hdu = astropy.io.fits.PrimaryHDU(image, header=header)
     hdu.writeto(fn)
@@ -386,7 +372,7 @@ def make_backplanes(
         threads=threads,
         burst=burst,
         write=write,
-        start_time=1000,
+        start_time=0,
         stop_after=stop_after,
         snippet=snippet
     )
