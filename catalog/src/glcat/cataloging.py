@@ -14,6 +14,7 @@ pc = pyarrow.compute
 from gPhoton.eclipse import photomfile_path, expfile_path
 from glcat.constants import Band, DEFAULT_APERTURES
 from glcat.gphoton_ext import counts2mag, counts2flux
+from glcat.modelphotometry import model_photometry
 
 
 def exposure_times_for_catalog(
@@ -117,7 +118,8 @@ def make_band_catalog(
     """
     Produce a unified NUV/FUV photometric catalog of all sources
     detected in `band`, by combining the base photometry for that band
-    with the *forced* photometry for the *other* band.
+    with the *forced* photometry for the *other* band. Also run model
+    based photometry.
 
     Arguments:
       catalog_path   - Pathname where the catalog will be written.
@@ -190,6 +192,9 @@ def make_band_catalog(
             aper_alt(b_base, i, phot)
         )
 
+    # add model photometry columns for both base and forced bands
+    columns.update(model_photometry(aperture_sizes, columns, b_base))
+
     if len(ix_forced) == nrows:
         # photometric centers for the other band
         columns[f"{b_forced}_XCENTER"] = ix_forced["xcenter"]
@@ -205,6 +210,9 @@ def make_band_catalog(
             columns.update(
                 aper_photometry(exposure_times[b_forced], b_forced, i, phot)
             )
+
+        # add model photometry columns for forced band
+        columns.update(model_photometry(aperture_sizes, columns, b_forced))
 
     else:
         # no data available for the other band, fill in blank columns
@@ -222,10 +230,26 @@ def make_band_catalog(
             columns[f"{b_forced}_MAG_A{i}"]           = nulls(nrows)
             columns[f"{b_forced}_MAG_ERR_UPPER_A{i}"] = nulls(nrows)
             columns[f"{b_forced}_MAG_ERR_LOWER_A{i}"] = nulls(nrows)
+            # model photometry cols
+            columns[f"{b_forced}_MDL_SE_A{i}"]        = nulls(nrows)
+            columns[f"{b_forced}_MDL_RSL_A{i}"]       = nulls(nrows)
+            for name in ["CPS", "SIGMA", "BKG_CPS", "CPS_SE", "SIGMA_SE", "BKG_CPS_SE", "DET"]:
+                columns[f"{b_forced}_MDL_{name}"]     = nulls(nrows)
 
+    # add a check that there's no duplicate col names, to prevent mayhem
+    if len(set(columns.keys())) != len(columns):
+        raise ValueError("duplicate column names detected after model photometry")
+
+    # index column
+    row_index = np.arange(nrows)
+    index = np.array([
+        f"{eclipse:05}_{leg:02}_{idx:06}_{band}"
+        for idx in row_index])
+    columns["BAND_INDEX"] = index
 
     # and that's all! write out the table.
     catalog_table = pyarrow.Table.from_pydict(columns)
+
     pyarrow.parquet.write_table(
         catalog_table,
         catalog_path,
