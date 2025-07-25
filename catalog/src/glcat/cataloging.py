@@ -85,7 +85,7 @@ def photometry_for_catalog(
             "aperture_sum", "artifact_flag"
         ]
         if suffix == "base":
-            columns.extend(["ya_aperture_sum", "stdcolrow_aperture_sum"])
+            columns.extend(["ya_aperture_sum", "stdcolrow_aperture_sum","q_aperture_sum"])
 
         if src.exists():
             photometry[ap] = pyarrow.parquet.read_table(
@@ -306,9 +306,11 @@ def aper_alt(
 
     ya_photom = phot['ya_aperture_sum'].to_numpy()
     stdcolrow_photom = phot['stdcolrow_aperture_sum'].to_numpy()
+    q_photom = phot['q_aperture_sum'].to_numpy()
 
     return {
         f"{band}_YA_A{aper_ix}": ya_photom,
-        f"{band}_SIGDISP_A{aper_ix}": stdcolrow_photom
+        f"{band}_SIGDISP_A{aper_ix}": stdcolrow_photom,
+        f"{band}_Q_A{aper_ix}": q_photom
     }
 

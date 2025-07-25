@@ -100,7 +100,7 @@ def base_photometry(
             suffix = "base",
             source_catalog_file = None,
             ftype = "parquet",
-            photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row')
+            photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row', 'q')
         )
 
 
