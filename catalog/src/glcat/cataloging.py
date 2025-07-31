@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from datetime import datetime, timezone
 
 # "import pyarrow as pa" does *not* make submodules available as pa.foo
 import pyarrow
@@ -250,12 +251,25 @@ def make_band_catalog(
     # and that's all! write out the table.
     catalog_table = pyarrow.Table.from_pydict(columns)
 
+    metadata = {
+        b"TELESCOP": b"GALEX",
+        b"ECLIPSE": str(eclipse).encode(),
+        b"LEG": str(leg).encode(),
+        b"BANDNAME": str(band).encode(),
+        b"BAND": str(1 if band == "NUV" else 2).encode(),
+        b"ORIGIN": b"Million Concepts",
+        b"DATE": datetime.now(timezone.utc).replace(microsecond=0).isoformat().encode(),
+        b"TIMESYS": b"UTC",
+        b"VERSION": f"GLCAT_1.0",
+    }
+    catalog_table = catalog_table.replace_schema_metadata(metadata)
+
     pyarrow.parquet.write_table(
         catalog_table,
         catalog_path,
         # maximize interop with other parquet readers
         version="1.0",
-        store_schema=False
+        store_schema=True
     )
 
 
