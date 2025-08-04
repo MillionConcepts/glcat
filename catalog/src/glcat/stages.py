@@ -203,7 +203,7 @@ def band_catalog(
     for leg in get_legs(eclipse, aspect_dir=aspect_dir):
         # We always need the exposure time for both bands for each leg.
         exposure_times = exposure_times_for_catalog(
-            eclipse, leg, depth=depth, eclipse_dir=eclipse_dir
+            eclipse, leg, depth=depth, eclipse_dir=eclipse_dir, aperture_size=aperture_sizes[0]
         )
 
         for band in bands:

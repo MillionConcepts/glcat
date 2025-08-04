@@ -24,37 +24,37 @@ def exposure_times_for_catalog(
     *,
     depth: int,
     eclipse_dir: Path,
+    aperture_size: float,
 ) -> dict[Band, float]:
     """
-    Read the exposure-time files for the current eclipse and leg.
+    Read the exposure-time metadata for the current eclipse and leg
+    from the photometry tables. This *used* to be a standalone csv.
     Compute the aggregate exposure times used by catalog generation.
-    """
-
-    # We only need the 'expt' column from the exposure-time files.
-    options = pyarrow.csv.ConvertOptions(
-        include_columns=["expt"],
-        column_types={"expt": pyarrow.float64()}
-    )
-
-    # We always need the exposure time for both bands, whether or not
-    # we're generating catalogs for both bands.
+    Default to photom table for first aperture in aperture list. """
     expt = {}
     for band in [Band.NUV, Band.FUV]:
-        exp_path = eclipse_dir / expfile_path(
+        photom_path = eclipse_dir / photomfile_path(
             eclipse,
             leg,
             band.name,
             mode = "direct",
             depth = depth,
             start = None,
+            aperture = aperture_size,
+            ftype = "parquet",
+            suffix = "base",
         )
         try:
-            exp_data = pyarrow.csv.read_csv(exp_path, convert_options = options)
-            expt[band] = pc.sum(exp_data["expt"]).as_py()
+            photom_file = pyarrow.parquet.ParquetFile(photom_path)
+            metadata = photom_file.schema_arrow.metadata
+            if metadata is None or b"XPOSURE" not in metadata:
+                raise ValueError(f"'xposure' not in metadata of {photom_path}")
+            xposure_str = float(metadata[b"XPOSURE"].decode("utf-8"))
+            expt[band] = float(xposure_str)
         except FileNotFoundError:
-            print(f"eclipse {eclipse} band {band}: "
-                  f"exposure time table {exp_path} not found")
-            expt[band] = 0
+            raise FileNotFoundError(
+                f"eclipse {eclipse} band {band}: photom table {photom_path} not found"
+            )
 
     return expt
 
