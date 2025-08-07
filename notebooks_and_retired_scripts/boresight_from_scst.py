@@ -647,6 +647,8 @@ def boresight_for_leg(
         ra0_new, dec0_new = point_to_ra_dec(ra0, dec0, centroid.x, centroid.y)
         if np.isclose(ra0, ra0_new) and np.isclose(dec0, dec0_new):
             break
+        ra0 = ra0_new
+        dec0 = dec0_new
         iterations += 1
         if iterations >= 20:
             raise RuntimeError(
