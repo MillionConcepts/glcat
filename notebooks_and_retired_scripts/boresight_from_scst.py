@@ -12,6 +12,7 @@ from collections import namedtuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, fields as dc_fields
 from datetime import datetime, timedelta, timezone
+from itertools import combinations
 from math import isnan, inf as Inf, nan as NaN, pi as PI
 from pathlib import Path
 from typing import Any, Iterable, Self
@@ -20,7 +21,6 @@ import numpy as np
 import pyarrow as pa
 import shapely
 
-from astropy.coordinates import angular_separation
 from astropy.io import fits
 from gPhoton.constants import DETSIZE, PIXEL_SIZE
 from gPhoton.coords.gnomonic import gnomfwd_simple, gnomrev_simple
@@ -28,28 +28,7 @@ from gPhoton.io import mast
 from pandas import DataFrame
 from pyarrow import parquet
 from scipy.ndimage import label
-from scipy.spatial.distance import pdist, squareform
 
-
-# conversion factors for angular units
-DEG2RAD = PI/180
-RAD2DEG = 180/PI
-
-# Separation limit: if any aspect points are farther than this from a
-# planned target then we cannot easily assign them to that target.
-#
-# The chosen value is 4 minutes of arc, which produces an
-# uncircularity well below SR_ISOP_PROBLEM_THRESHOLD (see below).
-# Most multi-target eclipses have angular separation between targets
-# of 5′ or more; the (common) exception is "small petal pattern"
-# eclipses, which were not originally intended to be processed as
-# multi-target. Conversely, for almost all types of eclipse, more than
-# 95% of all aspect points are within 4′ of their nearest target; the
-# only exception is the "MIS/dto" eclipses, where you have to go out
-# to 5′ for 95%.  If we consider only _unflagged_ aspect points
-# (see ok_aspect_points below), more than 95% of all points are
-# within 3′ of the closest target for all types of eclipses.
-TARGET_ANGSEP_LIMIT = 4.0 / 60.0
 
 # hardcoded cdelt and cenpix parameters from load_aspect_solution
 CDELT  = 1.0 / 36000.0
@@ -136,15 +115,6 @@ def progress(msg):
     sys.stderr.write(f"[{elapsed}]  {msg}\n")
 
 
-def angular_separation_deg(ra1, dec1, ra2, dec2):
-    return RAD2DEG * angular_separation(
-        ra1 * DEG2RAD,
-        dec1 * DEG2RAD,
-        ra2 * DEG2RAD,
-        dec2 * DEG2RAD
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class DownloadedEclipse:
     eclipse: int
@@ -188,12 +158,31 @@ class AspectFixes:
     roll: np.ndarray
     n_runs: int
 
+
+@dataclass(frozen=True, slots=True)
+class ExposureMetric:
+    full_area: float
+    partial_area_ratio: float
+    uncircularity: float
+
+    def is_acceptable(self) -> bool:
+        return (
+            self.full_area > 0
+            and self.partial_area_ratio <= AREA_RATIO_LIMIT
+            and self.uncircularity <= UNCIRCULARITY_LIMIT
+        )
+
+    def __str__(self):
+        return (
+            f"[fa: {self.full_area:g}"
+            f" pa_ratio: {self.partial_area_ratio:.3f}"
+            f" uncirc: {self.uncircularity:.4g}]"
+        )
+
 @dataclass(frozen=True, slots=True)
 class LegAssignment:
     leg_ids: np.ndarray
-    centroids: np.ndarray
     n_legs: int
-
 
 @dataclass(slots=True, frozen=True)
 class MetadataRecord:
@@ -405,6 +394,15 @@ def transform_to_ra_dec(
         CENPIX
     )
 
+def point_to_ra_dec(
+    ra0: float,
+    dec0: float,
+    xi: float,
+    eta: float,
+) -> (float, float):
+    ra, dec = transform_to_ra_dec(ra0, dec0, np.array([xi]), np.array([eta]))
+    return ra.item(), dec.item()
+
 
 def ok_aspect_fixes(aspect: DataFrame) -> AspectFixes:
     """extract the time of each aspect fix from the aspect table,
@@ -447,73 +445,84 @@ def ok_aspect_fixes(aspect: DataFrame) -> AspectFixes:
     )
 
 
-def exposure_regions(xi, eta, *, metrics_only=False):
+def aperture_disks(xi, eta):
+    """For each point (xi, eta) construct a circle centered at that
+    point whose radius is the radius of the GALEX detector aperture.
     """
-    Find the area, on an imaginary detector plate of unbounded
-    extent, that was exposed to incoming light during one or more of
-    the 'ok' time steps.  This is simply the geometric union of the
-    detector apertures for each 'ok' time step, and each of those
-    apertures is a disk centered on the ap_point for that time step.
-
-    Also find the area that was exposed to light during _all_ of the
-    'ok' time steps, and compute two measures of how stable the
-    telescope seems to have been during the exposure.
-    """
-    ap_points = shapely.points(xi, eta)
-    # for each 'ok' aspect point, find the detector aperture with that
-    # point at its center
-    ap_disks = shapely.buffer(
-        ap_points,
+    return shapely.buffer(
+        shapely.points(xi, eta),
         APERTURE_RADIUS,
         quad_segs=QUAD_SEGS,
     )
 
-    # The union of all the ap_disks gives the area (on an imaginary
-    # photographic plate of unbounded extent) that was exposed to
-    # incoming light; the intersection of all the ap_disks gives the
-    # area that was exposed for the full exposure time of the leg;
-    # and finally, the difference (union minus intersection) is the
-    # region of the imaginary plate that didn't get fully exposed,
-    # therefore source finding is likely to be unreliable within.
-    full = shapely.intersection_all(ap_disks)
-    edge = shapely.difference(shapely.union_all(ap_disks), full)
+
+def exposure_for_apertures(disks):
+    """Given a set of disks, each corresponding to the GALEX detector
+    aperture at some time step, produce the region, on an imaginary
+    detector plate of unbounded extent, that is common to all the
+    disks (which is the region that was exposed to incoming light
+    during the entire exposure) and the region that is common to some
+    but not all the disks (exposed to light during some but not all of
+    the exposure).
+    """
+    full = shapely.intersection_all(disks)
+    partial = shapely.difference(shapely.union_all(disks), full)
+
+    return full, partial
+
+
+def exposure_goodness(full, partial) -> ExposureMetric:
+    """Compute measures of how stable the telescope seems to
+    have been during an exposure characterized by the regions
+    FULL and PARTIAL.
+
+    The return value has 3 attributes:
+     - full_area: Area of the full exposure region.  Note that this
+       is in detector space coordinates (xi, eta) and the transformation
+       from detector to sky coordinates is NOT area-preserving.
+     - partial_area_ratio: Ratio of the area of the partially exposed
+       region to the area of the full exposure region.
+     - uncircularity: Measure of how far off the full region is from
+       a perfect circle.  Specifically, this is the reciprocal
+       isoperimetric quotient minus one; zero is a perfect circle.
+       See <https://en.wikipedia.org/wiki/Isoperimetric_inequality>.
+       Using the reciprocal quotient and subtracting one facilitates
+       plotting typical-for-us values on a log scale.
+    """
 
     # for AIS eclipses there might be no overlap at all when
     # considering the entire eclipse at once
     if full.is_empty:
-        full_area = 0
-        s_r_isop = Inf
-        pa_ratio = Inf
-    else:
-        # Compute a mostly standard measure of compactness for the region
-        # of full exposure: P²⁄4πA - 1, which we're calling the shifted
-        # reciprocal isoperimetric quotient.  (The standard isoperimetric
-        # quotient is 4πA⁄P², which ranges from 0 to 1, where 1 is a
-        # perfect circle and 0 is a shape with zero area but nonzero
-        # perimeter, e.g. a line segment.  The reciprocal ranges from 1 to
-        # positive infinity, and subtracting 1 puts a perfect circle at 0.
-        # We do this transformation because most legs have an isoperimetric
-        # quotient very close to 1; on our data set, the shifted reciprocal
-        # quotient ranges from 4 × 10⁻⁵ to 0.21, which is usefully
-        # put on a log scale.)
+        return ExposureMetric(
+            full_area = 0,
+            partial_area_ratio = Inf,
+            uncircularity = Inf,
+        )
 
-        # I don't trust shapely not to recalculate these properties on
-        # every access.
-        full_perimeter = full.exterior.length
-        full_area = full.area
-        s_r_isop = full_perimeter * full_perimeter / (4 * np.pi * full_area) - 1
+    # I don't trust shapely not to recalculate these properties on
+    # every access.
+    full_perimeter = full.exterior.length
+    full_area = full.area
 
-        # Also compute the ratio of the area of the partially exposed
-        # region to the area of the fully exposed region.
-        pa_ratio = edge.area / full_area
+    # The standard isoperimetric quotient is 4πA⁄P², which ranges from
+    # 0 to 1, where 1 is a perfect circle and 0 is a shape with zero
+    # area but nonzero perimeter, e.g. a line segment.  Its reciprocal
+    # ranges from 1 to positive infinity, and subtracting 1 puts a
+    # perfect circle at 0.  We do this transformation because most
+    # legs have an isoperimetric quotient very close to 1; on our data
+    # set, the shifted reciprocal quotient ranges from 4 × 10⁻⁵ to
+    # 0.21, which is usefully put on a log scale.)
 
-    # use the centroid of the full exposure region as the "observed center"
-    # of the leg
-    if metrics_only:
-        return full.centroid, s_r_isop, pa_ratio
-    else:
-        return ap_disks, full, edge, full_area, \
-            full.centroid, s_r_isop, pa_ratio
+    s_r_isop = full_perimeter * full_perimeter / (4 * np.pi * full_area) - 1
+
+    return ExposureMetric(
+        full_area = full_area,
+        partial_area_ratio = partial.area / full_area,
+        uncircularity = s_r_isop
+    )
+
+def goodness_for_apertures(disks):
+    return exposure_goodness(*exposure_for_apertures(disks))
 
 
 def legs_by_circularity(fixes: AspectFixes) -> LegAssignment:
@@ -533,32 +542,39 @@ def legs_by_circularity(fixes: AspectFixes) -> LegAssignment:
     ra0 = fixes.ra[len(fixes.ra)//2]
     dec0 = fixes.dec[len(fixes.dec)//2]
     xi, eta = transform_to_xi_eta(ra0, dec0, fixes.ra, fixes.dec, fixes.roll)
+    disks = aperture_disks(xi, eta)
 
+    # First try a single leg for the entire eclipse.
+    full_depth_metric = goodness_for_apertures(disks)
+    if full_depth_metric.is_acceptable():
+        return LegAssignment(
+            leg_ids = np.zeros(fixes.ra.shape, np.int32),
+            n_legs = 1
+        )
+
+    # Each leg must be one or more _consecutive_ runs.
+    # We want to find the set of splits that simultaneously minimizes
+    # the number of legs, the uncircularity of each leg, and the partial
+    # area ratio of each leg.
+    # TODO: The algorithm below is greedy and satisficing.  It does not
+    # always find the optimum.  Replace with dynamic programming.
     leg_ids = np.full(fixes.ra.shape, -1, np.int32)
     n_legs = 0
-    c_xi = []
-    c_eta = []
 
     leg_mask = np.full(fixes.ra.shape, False, np.bool_)
     for run in range(fixes.n_runs):
         run_mask = fixes.run_id == run
         trial_leg_mask = leg_mask | run_mask
-        centroid, uncirc, pa_ratio = exposure_regions(
-            xi[trial_leg_mask],
-            eta[trial_leg_mask],
-            metrics_only=True,
-        )
-        if uncirc > UNCIRCULARITY_LIMIT or pa_ratio > AREA_RATIO_LIMIT:
+        metric = goodness_for_apertures(disks[run_mask])
+        if not metric.is_acceptable():
             # adding the current run to the leg made it too warped
             if not leg_mask.any():
                 # the current run is already too warped
                 raise AssertionError(
-                    f"single run too warped: {uncirc=} {pa_ratio=}"
+                    f"single run too warped: {metric=}"
                 )
 
             leg_ids[leg_mask] = n_legs
-            c_xi.append(centroid.x)
-            c_eta.append(centroid.y)
             n_legs += 1
             leg_mask = run_mask
         else:
@@ -567,17 +583,10 @@ def legs_by_circularity(fixes: AspectFixes) -> LegAssignment:
     # don't lose the very last leg
     if leg_mask.any():
         leg_ids[leg_mask] = n_legs
-        c_xi.append(centroid.x)
-        c_eta.append(centroid.y)
         n_legs += 1
-
-    c_ra, c_dec = transform_to_ra_dec(
-        ra0, dec0, np.array(c_xi), np.array(c_eta)
-    )
 
     return LegAssignment(
         leg_ids = leg_ids,
-        centroids = np.vstack([c_ra, c_dec]).transpose(),
         n_legs = n_legs,
     )
 
@@ -602,29 +611,62 @@ def boresight_for_leg(
     ra = fixes.ra[this_leg]
     dec = fixes.dec[this_leg]
     roll = fixes.roll[this_leg]
-    ra0 = legs.centroids[leg_index, 0]
-    dec0 = legs.centroids[leg_index, 1]
 
-    xi, eta = transform_to_xi_eta(ra0, dec0, ra, dec, roll)
-
-    ap_disks, full, edge, full_area, centroid, s_r_isop, pa_ratio = \
-        exposure_regions(xi, eta)
-
-    if not edge.is_empty:
-        bbox = edge.bounds
-    elif not full.is_empty:
-        bbox = full.bounds
-    else:
+    if len(ra) == 0:
         raise AssertionError(
-            f"{eclipse}/{leg_index}: empty regions xi={xi!r} eta={eta!r}"
+            f"{eclipse}/{leg_index}: empty leg; {legs.leg_ids=}"
         )
 
+    # Iteratively compute the centroid of the leg, which we will
+    # use as the observed detector center of the leg, by repeatedly
+    # projecting the aperture points into detector coordinates,
+    # computing the full-exposure region and its centroid,
+    # back-projecting that centroid into sky coordinates, and using
+    # the result as the projection center for the next iteration,
+    # until the values converge.  Again the starting point is arbitrary.
+    #
+    # It would probably be better to compute the centroid of the point
+    # set in spherical coordinates (see e.g.
+    # <https://skeptric.com/calculate-centroid-on-sphere/> but that's
+    # a mess and I'm not sure how to take roll into account.
+
+    ra0 = ra[len(ra)//2]
+    dec0 = dec[len(dec)//2]
+    ra0_new = None
+    dec0_new = None
+    iterations = 0
+    while True:
+        xi, eta = transform_to_xi_eta(ra0, dec0, ra, dec, roll)
+        ap_disks = aperture_disks(xi, eta)
+        full, partial = exposure_for_apertures(ap_disks)
+        if full.is_empty:
+            raise AssertionError(
+                f"{eclipse}/{leg_index}: empty regions {ra0=} {ra0_new=} {dec0=} {dec0_new=}"
+        )
+        centroid = full.centroid
+        ra0_new, dec0_new = point_to_ra_dec(ra0, dec0, centroid.x, centroid.y)
+        if np.isclose(ra0, ra0_new) and np.isclose(dec0, dec0_new):
+            break
+        iterations += 1
+        if iterations >= 20:
+            raise RuntimeError(
+                f"not converging - {ra0=} {ra0_new=} {dec0=} {dec0_new=}"
+            )
+
+    # partial can be empty if the leg is a single point
+    if not partial.is_empty:
+        bbox = partial.bounds
+    else:
+        assert not full.is_empty
+        bbox = full.bounds
+
+    metric = exposure_goodness(full, partial)
 
     # convert bbox and centroid back to sky coordinates
     ra_bounds, dec_bounds = transform_to_ra_dec(
         ra0, dec0,
-        np.array([bbox[0], centroid.x, bbox[2]]),
-        np.array([bbox[1], centroid.y, bbox[3]])
+        np.array([bbox[0], bbox[2]]),
+        np.array([bbox[1], bbox[3]])
     )
 
     # do we have a planned target for this leg?
@@ -669,8 +711,8 @@ def boresight_for_leg(
             leg                         = leg_id,
             time                        = start_time,
             duration                    = duration,
-            ra0                         = ra_bounds[1],
-            dec0                        = dec_bounds[1],
+            ra0                         = ra0,
+            dec0                        = dec0,
             roll0                       = 0.0,
             planned_ra                  = planned_ra,
             planned_dec                 = planned_dec,
@@ -678,15 +720,15 @@ def boresight_for_leg(
             ra_max                      = ra_bounds[2],
             dec_min                     = dec_bounds[0],
             dec_max                     = dec_bounds[2],
-            full_exposure_area          = full_area,
-            full_exposure_uncircularity = s_r_isop,
-            partial_exposure_area_ratio = pa_ratio,
+            full_exposure_area          = metric.full_area,
+            full_exposure_uncircularity = metric.uncircularity,
+            partial_exposure_area_ratio = metric.partial_area_ratio,
         ),
         LegApertureRecord(
             eclipse                 = eclipse,
             leg                     = leg_id,
             full_exposure_region    = full.wkb,
-            partial_exposure_region = edge.wkb,
+            partial_exposure_region = partial.wkb,
         )
     )
 
@@ -1145,6 +1187,8 @@ def main() -> None:
                 if args.debug:
                     e.debug_report()
                 if args.stop_on_error:
+                    for f in futures:
+                        f.cancel()
                     sys.exit(1)
                 process_update(total, completed, nom, dev, errors)
 
