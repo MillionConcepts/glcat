@@ -337,11 +337,13 @@ def report_uncaught_exception(
 
 
 def process_eclipse(eclipse: int, options: CLIOptions):
-    e_warn, e_error = check_eclipse(eclipse, options.aspect_dir)
+    e_warn, e_error, postcsp = check_eclipse(eclipse, options.aspect_dir)
     for warning in e_warn:
         sys.stderr.write(f"glcat: eclipse {eclipse}: warning: {warning}\n")
     for err in e_error:
         sys.stderr.write(f"glcat: eclipse {eclipse}: error: {err}\n")
+    if postcsp:
+        print(f"Eclipse {eclipse} is post CSP.")
     if e_error:
         raise RuntimeError("skipped due to metadata issues\n")
 
