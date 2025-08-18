@@ -1147,7 +1147,7 @@ def no_aspect_eclipse(md: SCSTMetadata) -> Eclipse:
             plan_id          = md.plan_id,
             planned_legs     = md.planned_legs,
             observed_legs    = None,
-            has_aspect       = True,
+            has_aspect       = False,
 
             eclipse_start    = md.eclipse_start,
             eclipse_duration = md.eclipse_duration,
