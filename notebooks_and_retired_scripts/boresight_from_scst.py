@@ -139,7 +139,7 @@ def progress(msg: str) -> None:
     sys.stderr.write(f"[{elapsed}]  {msg}\n")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(kw_only=True, frozen=True, slots=True)
 class DownloadedEclipse:
     eclipse: int
     scst_file: Path
@@ -148,7 +148,7 @@ class DownloadedEclipse:
     has_fuv_raw6: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(kw_only=True, frozen=True, slots=True)
 class SCSTMetadata:
     eclipse: int
     visit: int
@@ -173,7 +173,7 @@ class SCSTMetadata:
     legs: NDArray[np.int32]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(kw_only=True, frozen=True, slots=True)
 class AspectFixes:
     time: NDArray[np.float64]
     run_id: NDArray[np.int32]
@@ -184,7 +184,13 @@ class AspectFixes:
     original_time: NDArray[np.float64]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(kw_only=True, frozen=True, slots=True)
+class ApertureDisks:
+    disks: NDArray[np.object_]
+    ra_offset: float
+
+
+@dataclass(kw_only=True, frozen=True, slots=True)
 class ExposureMetric:
     full_area: float
     partial_area_ratio: float
@@ -205,7 +211,72 @@ class ExposureMetric:
         )
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(kw_only=True, slots=True)
+class ExposureRegions:
+    ra_offset: float
+    partial: shapely.Polygon | shapely.MultiPolygon
+    full: shapely.Polygon | shapely.MultiPolygon
+    full_370: None | shapely.Polygon | shapely.MultiPolygon = None
+    full_350: None | shapely.Polygon | shapely.MultiPolygon = None
+
+    def goodness(self) -> ExposureMetric:
+        """Compute measures of how stable the telescope seems to
+        have been during an exposure characterized by the regions
+        FULL and PARTIAL of self.
+
+        The return value has 3 attributes:
+         - full_area: Area of the full exposure region in square degrees.
+         - partial_area_ratio: Ratio of the area of the partially exposed
+           region to the area of the full exposure region.
+         - uncircularity: Measure of how far off the full region is from
+           a perfect circle.  Specifically, this is the reciprocal
+           isoperimetric quotient minus one; zero is a perfect circle.
+           See <https://en.wikipedia.org/wiki/Isoperimetric_inequality>.
+           Using the reciprocal quotient and subtracting one facilitates
+           plotting typical-for-us values on a log scale.
+        """
+        full = self.full
+        partial = self.partial
+
+        # for multi-leg eclipses there might be no overlap at all when
+        # considering the entire eclipse at once
+        if full.is_empty:
+            return ExposureMetric(
+                full_area = 0,
+                partial_area_ratio = Inf,
+                uncircularity = Inf,
+            )
+
+        full_area = full.area
+        if isinstance(full, shapely.Polygon):
+            full_perimeter = full.exterior.length
+        else:
+            assert isinstance(full, shapely.MultiPolygon)
+            full_perimeter = sum(p.exterior.length for p in full.geoms)
+
+
+        # The standard isoperimetric quotient is 4πA⁄P², which ranges from
+        # 0 to 1, where 1 is a perfect circle and 0 is a shape with zero
+        # area but nonzero perimeter, e.g. a line segment.  Its reciprocal
+        # ranges from 1 to positive infinity, and subtracting 1 puts a
+        # perfect circle at 0.  We do this transformation because most
+        # legs have an isoperimetric quotient very close to 1; on our data
+        # set, the shifted reciprocal quotient ranges from 4 × 10⁻⁵ to
+        # 0.21, which is usefully put on a log scale.)
+
+        s_r_isop = full_perimeter * full_perimeter / (4 * PI * full_area) - 1
+
+        # For the "partial area ratio", what we want is the _exclusive_
+        # partial area, that is, the area of the partial region minus the
+        # area of the full region.
+        return ExposureMetric(
+            full_area = full_area,
+            partial_area_ratio = (partial.area - full_area) / full_area,
+            uncircularity = s_r_isop
+        )
+
+
+@dataclass(kw_only=True, slots=True, frozen=True)
 class MetadataRecord:
     eclipse: int
     plan_type: str
@@ -239,7 +310,7 @@ class MetadataRecord:
     fuv_has_raw6: bool
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(kw_only=True, slots=True, frozen=True)
 class BoresightRecord:
     eclipse: int
     leg: int
@@ -272,8 +343,34 @@ class LegApertureRecord:
     full_370: bytes
     full_350: bytes
 
+    # these are only ever created from ExposureRegions objects
+    def __init__(self, eclipse: int, leg: int, rgns: ExposureRegions):
 
-@dataclass(slots=True, frozen=True)
+        # If the ra_offset of the regions is nonzero, we must
+        # reproject each region from the shifted plate carrée
+        # projection that it's currently in, to the normal one.
+        def reproject(rgn: shapely.Geometry) -> shapely.Geometry:
+            if prj is None:
+                return rgn
+            return PC_EQUATORIAL.project_geometry(rgn, prj)
+
+        if rgns.ra_offset == 0:
+            prj = None
+        else:
+            prj = crs.PlateCarree(central_longitude=rgns.ra_offset,
+                                  globe=CEL_SPHERE)
+
+        sattr = object.__setattr__
+        sattr(self, "eclipse", eclipse)
+        sattr(self, "leg", leg)
+
+        for er_name in ["partial", "full", "full_370", "full_350"]:
+            la_name = "full_400" if er_name == "full" else er_name
+            sattr(self, la_name,
+                  reproject(getattr(rgns, er_name)).wkb)
+
+
+@dataclass(kw_only=True, slots=True, frozen=True)
 class Eclipse:
     metadata: MetadataRecord
     boresight: list[BoresightRecord]
@@ -507,35 +604,65 @@ def aperture_disks(
     ras: NDArray[np.float64],
     decs: NDArray[np.float64],
     diameter: float,
-) -> NDArray[np.object_]:
-    """For each point `(ra, dec) in zip(ras, decs)`, construct a
-       circle in sky coordinates, centered at that point, whose
-       radius is the radius of the GALEX detector aperture.
+    ra_offset: float | None = None
+) -> ApertureDisks:
+    """For each point `(ra, dec) in zip(ras, decs)`, construct a circle
+       in sky coordinates, centered at that point, whose radius is the
+       radius of the GALEX detector aperture.
+
+       The circles may be systematically shifted in RA in order to
+       avoid the coordinate discontinuity at RA ±180°. The 'ra_offset'
+       field of the ApertureDisks object is the amount that should be
+       _added_ to the RA of each coordinate of each output polygon
+       to recover true RA.
+
     """
     # disk with the radius of the detector aperture, in degrees
     aperture = shapely.Point(0, 0).buffer(diameter/2, quad_segs=QUAD_SEGS)
 
     # For each point (ra, dec), back-project 'aperture', from an
     # azimuthal equidistant projection centered on (ra, dec), to the
-    # celestial sphere.
-    pc = PC_EQUATORIAL
+    # celestial sphere.  If 'ra_offset' was specified by the caller,
+    # use that, otherwise try several possibilities until we find one
+    # that doesn't split any disks.
     globe = CEL_SPHERE
-    aeqd = crs.AzimuthalEquidistant
-    return np.array([
-        pc.project_geometry(
-            aperture,
-            aeqd(ra, dec, globe=globe)
-        ).buffer(0)
-        for ra, dec in zip(ras, decs)
-    ])
+    AzEq = crs.AzimuthalEquidistant
+    PlateC = crs.PlateCarree
+
+    if ra_offset is None:
+        ra_offsets = [0., 30., 60., 90., 120., 150., 180.]
+    else:
+        ra_offsets = [ra_offset]
+    for offset in ra_offsets:
+        disks: list[shapely.Polygon] = []
+        if offset == 0:
+            pc = PC_EQUATORIAL
+        else:
+            pc = PlateC(central_longitude=offset, globe=globe)
+        for ra, dec in zip(ras, decs):
+            d = pc.project_geometry(
+                aperture,
+                AzEq(ra, dec, globe=globe),
+            ).buffer(0)
+            if isinstance(d, shapely.MultiPolygon):
+                break
+            disks.append(d)
+        else:
+            # did not break out of the loop => no disks were split
+            return ApertureDisks(
+                disks = np.array(disks),
+                ra_offset = offset
+            )
+
+    raise RuntimeError(
+        f"failed to find a suitable ra_offset; tried {ra_offsets!r}"
+    )
 
 
 def exposure_for_apertures(
-    disks: NDArray[np.object_]
-) -> tuple[
-    shapely.Polygon | shapely.MultiPolygon,
-    shapely.Polygon | shapely.MultiPolygon,
-]:
+    ap: ApertureDisks,
+    mask: NDArray[bool] | None = None
+) -> ExposureRegions:
     """Given a set of disks, each corresponding to the GALEX detector
     aperture at some time step, produce the region, on an imaginary
     detector plate of unbounded extent, that is common to all the
@@ -546,86 +673,35 @@ def exposure_for_apertures(
     by aperture_disks(..., DETSIZE).
 
     """
+    if mask is None:
+        disks = ap.disks
+    else:
+        disks = ap.disks[mask]
+
     full = shapely.intersection_all(disks)
     partial = shapely.union_all(disks)
 
     assert isinstance(full, (shapely.Polygon, shapely.MultiPolygon))
     assert isinstance(partial, (shapely.Polygon, shapely.MultiPolygon))
 
-    return full, partial
-
-
-def exposure_goodness(
-    full: shapely.Polygon | shapely.MultiPolygon,
-    partial: shapely.Polygon | shapely.MultiPolygon
-) -> ExposureMetric:
-    """Compute measures of how stable the telescope seems to
-    have been during an exposure characterized by the regions
-    FULL and PARTIAL.
-
-    The return value has 3 attributes:
-     - full_area: Area of the full exposure region in square degrees.
-     - partial_area_ratio: Ratio of the area of the partially exposed
-       region to the area of the full exposure region.
-     - uncircularity: Measure of how far off the full region is from
-       a perfect circle.  Specifically, this is the reciprocal
-       isoperimetric quotient minus one; zero is a perfect circle.
-       See <https://en.wikipedia.org/wiki/Isoperimetric_inequality>.
-       Using the reciprocal quotient and subtracting one facilitates
-       plotting typical-for-us values on a log scale.
-    """
-
-    # for AIS eclipses there might be no overlap at all when
-    # considering the entire eclipse at once
-    if full.is_empty:
-        return ExposureMetric(
-            full_area = 0,
-            partial_area_ratio = Inf,
-            uncircularity = Inf,
-        )
-
-    full_area = full.area
-    if isinstance(full, shapely.Polygon):
-        full_perimeter = full.exterior.length
-    else:
-        assert isinstance(full, shapely.MultiPolygon)
-        full_perimeter = sum(p.exterior.length for p in full.geoms)
-
-
-    # The standard isoperimetric quotient is 4πA⁄P², which ranges from
-    # 0 to 1, where 1 is a perfect circle and 0 is a shape with zero
-    # area but nonzero perimeter, e.g. a line segment.  Its reciprocal
-    # ranges from 1 to positive infinity, and subtracting 1 puts a
-    # perfect circle at 0.  We do this transformation because most
-    # legs have an isoperimetric quotient very close to 1; on our data
-    # set, the shifted reciprocal quotient ranges from 4 × 10⁻⁵ to
-    # 0.21, which is usefully put on a log scale.)
-
-    s_r_isop = full_perimeter * full_perimeter / (4 * PI * full_area) - 1
-
-    # For the "partial area ratio", what we want is the _exclusive_
-    # partial area, that is, the area of the partial region minus the
-    # area of the full region.
-    return ExposureMetric(
-        full_area = full_area,
-        partial_area_ratio = (partial.area - full_area) / full_area,
-        uncircularity = s_r_isop
+    return ExposureRegions(
+        ra_offset = ap.ra_offset,
+        partial = partial,
+        full = full,
     )
 
 
-@dataclass(slots=True) # temporarily not frozen see choose_legs
+@dataclass(kw_only=True, slots=True, frozen=True)
 class LegAssignment:
     category: str
     n_legs: int
-    disks: NDArray[np.object_]
+    ra_offset: float
+    disks: ApertureDisks
     run_masks: list[NDArray[np.bool]]
     grp_masks: list[NDArray[np.bool]]
     leg_masks: list[NDArray[np.bool]]
     leg_metrics: list[ExposureMetric]
-    leg_regions: list[tuple[
-        shapely.Polygon | shapely.MultiPolygon,
-        shapely.Polygon | shapely.MultiPolygon
-    ]]
+    leg_regions: list[ExposureRegions]
 
     ALL_CATEGORIES: ClassVar[list[str]] = [
         "forced_full_depth",
@@ -655,7 +731,7 @@ class LegAssignment:
     @classmethod
     def _from_masks(
         cls,
-        disks: NDArray[np.object_],
+        disks: ApertureDisks,
         leg_masks: list[NDArray[np.bool]],
         grp_masks: list[NDArray[np.bool]],
         run_masks: list[NDArray[np.bool]],
@@ -669,13 +745,14 @@ class LegAssignment:
         regions = []
         metrics = []
         for leg_mask in leg_masks:
-            full, partial = exposure_for_apertures(disks[leg_mask])
-            metric = exposure_goodness(full, partial)
-            regions.append((full, partial))
+            region = exposure_for_apertures(disks, leg_mask)
+            metric = region.goodness()
+            regions.append(region)
             metrics.append(metric)
         return cls(
             n_legs = len(leg_masks),
             disks = disks,
+            ra_offset = disks.ra_offset,
             run_masks = run_masks,
             grp_masks = grp_masks,
             leg_masks = leg_masks,
@@ -687,7 +764,7 @@ class LegAssignment:
     @classmethod
     def forced_full_depth(
         cls,
-        disks: NDArray[np.object_],
+        disks: ApertureDisks,
         run_masks: list[NDArray[np.bool]],
         grp_masks: list[NDArray[np.bool]],
     ) -> Self:
@@ -702,7 +779,7 @@ class LegAssignment:
     @classmethod
     def forced_all_split(
         cls,
-        disks: NDArray[np.object_],
+        disks: ApertureDisks,
         run_masks: list[NDArray[np.bool]],
         grp_masks: list[NDArray[np.bool]],
     ) -> Self:
@@ -717,7 +794,7 @@ class LegAssignment:
     @classmethod
     def all_possible_merges(
         cls,
-        disks: NDArray[np.object_],
+        disks: ApertureDisks,
         run_masks: list[NDArray[np.bool]],
         grp_masks: list[NDArray[np.bool]],
         mand_splits: list[bool],
@@ -742,7 +819,7 @@ class LegAssignment:
     @classmethod
     def clustered(
         cls,
-        disks: NDArray[np.object_],
+        disks: ApertureDisks,
         run_masks: list[NDArray[np.bool]],
         grp_masks: list[NDArray[np.bool]],
         leg_masks: list[NDArray[np.bool]],
@@ -801,7 +878,7 @@ def group_runs_by_separation(
 
 def clustered_leg_candidates(
     fixes: AspectFixes,
-    disks: NDArray[np.object_],
+    disks: ApertureDisks,
     run_masks: list[NDArray[np.bool]],
     grp_masks: list[NDArray[np.bool]],
     mand_splits: list[bool],
@@ -884,6 +961,7 @@ def dump_metrics(diag_dir: Path, eclipse: int,
 def choose_legs(
     fixes: AspectFixes,
     eclipse: int,
+    planned_targets: int,
     diag_dir: Path | None
 ) -> LegAssignment:
     """Merge runs of aspect fixes from 'fixes' into legs.
@@ -902,7 +980,12 @@ def choose_legs(
        produces a set of legs all of whose metrics are "acceptable"
        (see ExposureMetric.is_acceptable()), then we're done.
 
-    4. Otherwise, we take the centroid of each group of runs that
+    4. If the metrics from step (3) weren't all acceptable, but the
+       eclipse only had one _planned_ target, then we combine as much
+       as we can anyway.  This special rule addresses the 71 eclipses
+       that rule 5 gets wrong.
+
+    5. Otherwise, we take the centroid of each group of runs that
        we were required to combine by rule 1 as the representative
        of that group, and perform constrained hierarchical clustering
        to produce candidate sets with each possible number of legs.
@@ -922,7 +1005,7 @@ def choose_legs(
 
     cand = LegAssignment.all_possible_merges(disks, run_masks, grp_masks,
                                              mand_splits)
-    if cand.is_acceptable():
+    if cand.is_acceptable() or planned_targets == 1:
         return cand
 
     # Clustering-based candidates have to beat "all possible merges",
@@ -974,26 +1057,25 @@ def boresight_for_leg(
     leg_id = leg_index + 1
     leg_mask = legs.leg_masks[leg_index]
     metric = legs.leg_metrics[leg_index]
+    ra_offset = legs.disks.ra_offset
 
     ra = fixes.ra[leg_mask]
     dec = fixes.dec[leg_mask]
+
+    rgns = legs.leg_regions[leg_index]
+    assert not rgns.partial.is_empty
+    bbox = rgns.partial.bounds
+
+    rgns.full_370 = shapely.intersection_all(
+        aperture_disks(ra, dec, DETSIZE_370, ra_offset).disks
+    )
+    rgns.full_350 = shapely.intersection_all(
+        aperture_disks(ra, dec, DETSIZE_350, ra_offset).disks
+    )
+
     ra0, dec0 = centroid_on_celsphere(ra, dec)
-
-    full, partial = legs.leg_regions[leg_index]
-    full_370 = shapely.intersection_all(aperture_disks(ra, dec, DETSIZE_370))
-    full_350 = shapely.intersection_all(aperture_disks(ra, dec, DETSIZE_350))
-
-    time = fixes.time[leg_mask]
-
-    # 'partial' can be empty if the leg is a single point.
-    if not partial.is_empty:
-        bbox = partial.bounds
-    else:
-        assert not full.is_empty
-        bbox = full.bounds
-
-    # Find the nearest planned target to (ra0, dec0).  If its
-    # angular separation from (ra0, dec0) is less than MAX_ANGSEP_FOR_COMBINE,
+    # Find the nearest planned target to (ra0, dec0).  If its angular
+    # separation from (ra0, dec0) is less than MAX_ANGSEP_FOR_COMBINE,
     # assign this leg to that target.
     angseps = angular_separation_deg(
         ra0, dec0, planned_tgts[:,0], planned_tgts[:,1]
@@ -1010,6 +1092,7 @@ def boresight_for_leg(
     # flagged aspect point on either end of the run.  This ensures
     # that gphoton2 doesn't get confused by time ranges that consist
     # _only_ of unflagged points.
+    time = fixes.time[leg_mask]
     start_ix = 0
     while fixes.original_time[start_ix] < time[0]:
         start_ix += 1
@@ -1039,8 +1122,8 @@ def boresight_for_leg(
 
             planned_ra                  = planned_ra,
             ra0                         = ra0,
-            ra_min                      = bbox[0],
-            ra_max                      = bbox[2],
+            ra_min                      = bbox[0] + ra_offset,
+            ra_max                      = bbox[2] + ra_offset,
 
             planned_dec                 = planned_dec,
             dec0                        = dec0,
@@ -1051,14 +1134,7 @@ def boresight_for_leg(
             full_exposure_uncircularity = metric.uncircularity,
             partial_exposure_area_ratio = metric.partial_area_ratio,
         ),
-        LegApertureRecord(
-            eclipse  = eclipse,
-            leg      = leg_id,
-            partial  = partial.wkb,
-            full_400 = full.wkb,
-            full_370 = full_370.wkb,
-            full_350 = full_350.wkb,
-        )
+        LegApertureRecord(eclipse, leg_id, rgns)
     )
 
 
@@ -1085,14 +1161,13 @@ def finish_eclipse(
 
     # compute the centroid and bounding box of the entire eclipse
     ra0, dec0 = centroid_on_celsphere(fixes.ra, fixes.dec)
-    full, partial = exposure_for_apertures(legs.disks)
 
-    # partial can be empty if the eclipse is a single point
-    if not partial.is_empty:
-        bbox = partial.bounds
+    if legs.n_legs == 1:
+        rgns = legs.leg_regions[0]
     else:
-        assert not full.is_empty
-        bbox = full.bounds
+        rgns = exposure_for_apertures(legs.disks)
+    assert not rgns.partial.is_empty
+    bbox = rgns.partial.bounds
 
     return Eclipse(
         metadata=MetadataRecord(
@@ -1120,8 +1195,8 @@ def finish_eclipse(
             fuv_has_raw6     = md.fuv_has_raw6,
 
             ra0              = ra0,
-            ra_min           = bbox[0],
-            ra_max           = bbox[2],
+            ra_min           = bbox[0] + rgns.ra_offset,
+            ra_max           = bbox[2] + rgns.ra_offset,
 
             dec0             = dec0,
             dec_min          = bbox[1],
@@ -1279,7 +1354,13 @@ def plot_apertures(
     from colorcet import b_glasbey_bw_minc_20_hue_150_280 as NORM_COLORS
     from colorcet import b_glasbey_bw_minc_20_hue_330_100 as DEVIANT_COLORS
 
-    for leg, (metric, (full, partial)) in enumerate(zip(
+    if legs.ra_offset == 0:
+        prj = PC_EQUATORIAL
+    else:
+        prj = crs.PlateCarree(central_longitude=legs.ra_offset,
+                              globe=CEL_SPHERE)
+
+    for leg, (metric, rgn) in enumerate(zip(
         legs.leg_metrics, legs.leg_regions
     )):
 
@@ -1288,18 +1369,18 @@ def plot_apertures(
         else:
             fill = DEVIANT_COLORS[leg % len(DEVIANT_COLORS)]
 
-        if not partial.is_empty:
+        if not rgn.partial.is_empty:
             ax.add_geometries(
-                [partial],
-                PC_EQUATORIAL,
+                [rgn.partial],
+                prj,
                 edgecolor="none",
                 facecolor=fill,
                 alpha=0.2,
             )
-        if not full.is_empty:
+        if not rgn.full.is_empty:
             ax.add_geometries(
-                [full],
-                PC_EQUATORIAL,
+                [rgn.full],
+                prj,
                 edgecolor="none",
                 facecolor=fill,
                 alpha=0.4,
@@ -1390,7 +1471,7 @@ def crunch_eclipse_1(
 
     planned_tgts = planned_targets(scst_metadata)
     fixes = ok_aspect_fixes(aspect)
-    legs = choose_legs(fixes, de.eclipse, diag_dir)
+    legs = choose_legs(fixes, de.eclipse, scst_metadata.planned_legs, diag_dir)
 
     new_recs = finish_eclipse(
         scst_metadata,
@@ -1538,17 +1619,36 @@ class NewTableWriter:
         bst = self.bst_records.flush()
         la  = self.la_records.flush()
 
-        md = md.sort_by([("eclipse", "ascending")])
-        bst = bst.sort_by([("eclipse", "ascending"), ("leg", "ascending")])
-        la = la.sort_by([("eclipse", "ascending"), ("leg", "ascending")])
+        sort_order_md = [("eclipse", "ascending")]
+        sort_order_bst = [("eclipse", "ascending"), ("leg", "ascending")]
+
+        md = md.sort_by(sort_order_md)
+        bst = bst.sort_by(sort_order_bst)
+        la = la.sort_by(sort_order_bst)
 
         progress("writing tables...")
-        parquet.write_table(md, self.metadata)
-        parquet.write_table(bst, self.boresight)
+
+        SC = parquet.SortingColumn
+
+        parquet.write_table(
+            md, self.metadata,
+            sorting_columns=SC.from_ordering(md.schema, sort_order_md)
+            write_page_checksum=True,
+        )
+        parquet.write_table(
+            bst, self.boresight,
+            sorting_columns=SC.from_ordering(bst.schema, sort_order_bst)
+            write_page_checksum=True,
+        )
         # this one has really big blobs and is known not to benefit from
         # dictionary encoding
-        parquet.write_table(la, self.leg_aper,
-                            use_dictionary=False, compression="zstd")
+        parquet.write_table(
+            la, self.leg_aper,
+            sorting_columns=SC.from_ordering(la.schema, sort_order_bst)
+            use_dictionary=False,
+            compression="zstd",
+            write_page_checksum=True,
+        )
         progress("done.")
 
 
