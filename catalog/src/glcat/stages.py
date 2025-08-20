@@ -196,7 +196,7 @@ def band_catalog(
     verbose: int = 0,
 ) -> None:
     metadata = aspect_tables(eclipse, "metadata", aspect_dir=aspect_dir)[0]
-    obstypes = set(s.as_py() for s in metadata["obstype"])
+    obstypes = set(s.as_py() for s in metadata["plan_type"])
     obstype = obstypes.pop()
     assert not obstypes
 
