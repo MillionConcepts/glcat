@@ -52,10 +52,10 @@ def exposure_times_for_catalog(
             xposure_str = float(metadata[b"XPOSURE"].decode("utf-8"))
             expt[band] = float(xposure_str)
         except FileNotFoundError:
-            raise FileNotFoundError(
-                f"eclipse {eclipse} band {band}: photom table {photom_path} not found"
-            )
-
+            # the case in which there is no data for the band, like it was a bad observation etc
+            expt[band] = 0.0
+            print(f"Warning: eclipse {eclipse} band {band}: photom table {photom_path} not found, likely "
+                  f"a bad observation.")
     return expt
 
 
