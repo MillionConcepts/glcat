@@ -14,7 +14,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, fields as dc_fields
 from datetime import datetime, timedelta, timezone
 from itertools import chain, combinations, pairwise
-from math import isnan, inf as Inf, nan as NaN, pi as PI
+from math import isnan, inf as Inf, pi as PI
 from pathlib import Path
 from typing import Any, ClassVar, Iterable, Self
 from types import UnionType, NoneType
@@ -36,7 +36,7 @@ from pandas import DataFrame
 from pyarrow import parquet
 from scipy.ndimage import label
 from scipy.optimize import minimize
-from scipy.sparse import diags_array
+from scipy.sparse import diags_array, sparray as SPArray
 from scipy.spatial.distance import pdist
 from sklearn.cluster import AgglomerativeClustering
 
@@ -76,6 +76,17 @@ QUAD_SEGS = 72
 # Unix epoch (1970-01-01T00:00:00Z).  SCST and RAW6 files both contain
 # numeric timestamps counting from the GPS epoch.
 GPS_EPOCH = datetime(1980, 1, 6, 0, 0, 0, 0, timezone.utc).timestamp()
+
+# For whatever reason, the numeric timestamps for each aspect fix are
+# *always* nnnnnn.995 -- that is, 5000 μs *before* a whole number of
+# seconds since the epoch.  Eclipse start and end times in SCST files,
+# however, are expressed as string timestamps with no subsecond
+# information.  We take advantage of this by fudging eclipse and leg
+# start times to always be nnnnnn.990, and eclipse and leg end times
+# to always be nnnnnn.000, so that they are always strictly less than
+# or greater than, respectively, the timestamps of the aspect fixes
+# included in the eclipse or leg.
+INTERVAL_FUDGE = 0.005
 
 # Minimum angular separation between the last point of one run of
 # aspect fixes, and the first point of the next one, for them to be
@@ -161,13 +172,13 @@ class SCSTMetadata:
     eclipse_duration: float
 
     nuv_det_on_time: float
-    nuv_det_temp: float
-    nuv_tdc_temp: float
+    nuv_det_temp: float | None
+    nuv_tdc_temp: float | None
     nuv_has_raw6: bool
 
     fuv_det_on_time: float
-    fuv_det_temp: float
-    fuv_tdc_temp: float
+    fuv_det_temp: float | None
+    fuv_tdc_temp: float | None
     fuv_has_raw6: bool
 
     legs: NDArray[np.int32]
@@ -300,13 +311,13 @@ class MetadataRecord:
     dec_max: float | None
 
     nuv_det_on_time: float
-    nuv_det_temp: float
-    nuv_tdc_temp: float
+    nuv_det_temp: float | None
+    nuv_tdc_temp: float | None
     nuv_has_raw6: bool
 
     fuv_det_on_time: float
-    fuv_det_temp: float
-    fuv_tdc_temp: float
+    fuv_det_temp: float | None
+    fuv_tdc_temp: float | None
     fuv_has_raw6: bool
 
 
@@ -408,6 +419,16 @@ def scst_timestamp(stamp: str) -> float:
     return datetime.strptime(stamp, "%y%m%dT%H%M%S%z").timestamp() - GPS_EPOCH
 
 
+def nan_to_none(val: Any) -> Any:
+    """If 'val' is a floating point NaN, return None, otherwise return val."""
+    try:
+        if isnan(val):
+            return None
+    except TypeError:
+        pass
+    return val
+
+
 def metadata_from_scst(de: DownloadedEclipse) -> SCSTMetadata:
     """Extract all of the per-eclipse metadata that we care about from
        an SCST file."""
@@ -415,21 +436,16 @@ def metadata_from_scst(de: DownloadedEclipse) -> SCSTMetadata:
         header = hdulist[0].header
         eclipse = header["ECLIPSE"]
 
-        # For whatever reason, the numeric timestamps in an SCST
-        # file's actual data are almost always nnnnnn.995 -- that is,
-        # 5000 μs *before* a whole number of seconds since the epoch.
-        # The eclipse start time, however, is expressed as a string
-        # timestamp with no subsecond information.  Fudge the start
-        # time 0.01 s (10,000 μs) earlier to ensure that it will
-        # compare strictly less than any data timestamp.
-        eclipse_start = scst_timestamp(header["TRANGE0"]) - 0.01
+        # 2*INTERVAL_FUDGE because SCST header timestamps are always whole
+        # numbers of seconds and we want this to be .990.
+        eclipse_start = scst_timestamp(header["TRANGE0"]) - 2*INTERVAL_FUDGE
 
         nuv_det_on_time = header.get('NHVNOMN', 0)
         fuv_det_on_time = header.get('NHVNOMF', 0)
-        nuv_det_temp    = header.get('NDTDET', NaN)
-        nuv_tdc_temp    = header.get('NDTTDC', NaN)
-        fuv_det_temp    = header.get('FDTDET', NaN)
-        fuv_tdc_temp    = header.get('FDTTDC', NaN)
+        nuv_det_temp    = nan_to_none(header.get('NDTDET', None))
+        nuv_tdc_temp    = nan_to_none(header.get('NDTTDC', None))
+        fuv_det_temp    = nan_to_none(header.get('FDTDET', None))
+        fuv_tdc_temp    = nan_to_none(header.get('FDTTDC', None))
 
         ra0  = header["RA_CENT"]
         dec0 = header["DEC_CENT"]
@@ -523,38 +539,69 @@ def centroid_objective(
     return angular_separation(pt[0], pt[1], ra_rad, dec_rad).mean()
 
 
+def wrap_into_range(ra0: float, ra_min: float, ra_max: float) -> float:
+    """Fix a RA value that has come out 360° less or greater than it
+       ought to be"""
+    assert ra_min <= ra_max
+
+    while ra0 < ra_max - 360:
+        ra0 += 360.
+    while ra0 > ra_min + 360:
+        ra0 -= 360.
+    if ra0 < ra_min:
+        ra0 = ra_min
+    if ra0 > ra_max:
+        ra0 = ra_max
+    return ra0
+
+
 def centroid_on_celsphere(
     ra: NDArray[np.float64],
     dec: NDArray[np.float64]
 ) -> NDArray[np.float64]:
     """Return a point (c_ra, c_dec) which minimizes the mean angular
        separation from itself to all pairs of points (ra, dec)."""
+
+    # Similar to aperture_disks, if the RA values cross the coordinate
+    # discontinuity at RA ±180°, shift them so they don't.
+    # The objective function would compute correct distances without
+    # this, but it makes the range reduction at the end easier.
+    ra_offsets = [0., 30., 60., 90., 120., 150., 180.]
+    for ra_offset in ra_offsets:
+        offset_ra = ra + ra_offset
+        offset_ra_min = offset_ra.min()
+        offset_ra_max = offset_ra.max()
+        if offset_ra_min - offset_ra_max < 180:
+            break
+    else:
+        raise RuntimeError(
+            f"failed to find a suitable ra_offset; tried {ra_offsets!r}"
+        )
+
     ra_rad, dec_rad = np.broadcast_arrays(
-        ra * DEG_TO_RAD,
+        offset_ra * DEG_TO_RAD,
         dec * DEG_TO_RAD,
     )
     p0 = np.array([ra_rad[0], dec_rad[0]])
     # Nelder-Mead simplex algorithm does not require gradients
-    res = minimize(centroid_objective, p0, args=(ra_rad, dec_rad),
-                   method="nelder-mead")
+    res = minimize(
+        centroid_objective, p0, args=(ra_rad, dec_rad),
+        method="nelder-mead",
+    )
+    if not res.success:
+        # retry with Powell, which is slower but more robust; this
+        # is only needed for two eclipses
+        res = minimize(
+            centroid_objective, p0, args=(ra_rad, dec_rad),
+            method="powell",
+        )
     if not res.success:
         raise RuntimeError(f"Failed to find centroid: {res.message}")
-    return res.x.ravel() * RAD_TO_DEG
 
+    c_ra, c_dec = res.x.ravel() * RAD_TO_DEG
+    c_ra = wrap_into_range(c_ra, offset_ra_min, offset_ra_max)
 
-
-
-def plane_projection(ra0: float, dec0: float) -> crs.Projection:
-    """Return a projection of the celestial sphere onto a plane,
-       centered at equatorial coordinates (ra0, dec0).  The projection
-       will be equal-area, and will approximately preserve circles
-       near (ra0, dec0).  Presently, a Lambert azimuthal equal area
-       projection is used."""
-    return crs.LambertAzimuthalEqualArea(
-        central_longitude=ra0,
-        central_latitude=dec0,
-        globe=CEL_SPHERE,
-    )
+    return np.array([c_ra - ra_offset, c_dec])
 
 
 def ok_aspect_fixes(aspect: DataFrame) -> AspectFixes:
@@ -585,6 +632,19 @@ def ok_aspect_fixes(aspect: DataFrame) -> AspectFixes:
     # give each run of unflagged fixes a serial number
     runs, n_runs = label(ok)
 
+    # RA should be in (-180°, 180°]; wrap it if necessary.
+    # This fixup is only necessary for one eclipse, but it's critical
+    # for that eclipse (otherwise centroid_on_celsphere fails to converge).
+    ra = aspect["ra"].to_numpy()[ok]
+    ra = np.fmod(ra + 180.0, 360.0) - 180.0
+
+    # Thankfully, declination is always in [-90°, 90°] already;
+    # correcting that would be quite a bit more trouble, as
+    # declination wraparound affects RA as well and the most
+    # straightforward way to handle it involves trig functions.
+    # (see https://web.archive.org/web/20150109080324/http://research.microsoft.com/en-us/projects/wraplatitudelongitude/ )
+    dec = aspect["dec"].to_numpy()[ok]
+
     return AspectFixes(
         time   = times[ok],
         # label() used 0 for flagged points and [1, n_runs] for
@@ -592,9 +652,9 @@ def ok_aspect_fixes(aspect: DataFrame) -> AspectFixes:
         # points, so shift the labels to [0, n_runs), aligned with
         # what you get from range(n_runs).
         run_id = runs[ok] - 1,
-        ra     = aspect["ra"].to_numpy()[ok],
-        dec    = aspect["dec"].to_numpy()[ok],
         n_runs = n_runs,
+        ra = ra,
+        dec = dec,
         original_time = times,
         original_flagged = original_flagged
     )
@@ -661,7 +721,7 @@ def aperture_disks(
 
 def exposure_for_apertures(
     ap: ApertureDisks,
-    mask: NDArray[bool] | None = None
+    mask: NDArray[np.bool] | None = None
 ) -> ExposureRegions:
     """Given a set of disks, each corresponding to the GALEX detector
     aperture at some time step, produce the region, on an imaginary
@@ -884,6 +944,7 @@ def clustered_leg_candidates(
     mand_splits: list[bool],
 ) -> Iterable[LegAssignment]:
 
+    mask_shape = grp_masks[0].shape
     max_legs = len(grp_masks)
     min_legs = sum(mand_splits)
 
@@ -896,53 +957,59 @@ def clustered_leg_candidates(
     yield LegAssignment.clustered(disks, run_masks, grp_masks, grp_masks)
 
     # Compute the centroid of each group.
-    grp_centroids = np.array([
+    grp_centroids = [
         centroid_on_celsphere(fixes.ra[mask], fixes.dec[mask])
         for mask in grp_masks
+    ]
+
+    # For each _consecutive_ pair of centroids, compute their angular
+    # separation, unless the pair is mandatorily split, in which case
+    # set the distance to pseudo-infinite (1e308).
+    # AgglomerativeClustering barfs on actual infinity.
+    separations = np.array([
+        1e308 if split else angular_separation_deg(*ca, *cb)
+        for (ca, cb), split in zip(pairwise(grp_centroids), mand_splits[:-1])
     ])
 
-    # Compute the connectivity matrix.  Because legs must consist of
-    # consecutive runs, this matrix is very sparse: all elements are
-    # zero, except on the 1st upper and lower diagonals, which are
-    # both equal to the logical negation of the first N-1 elements
-    # of 'mand_splits' -- i.e. each group can be merged only with
-    # its immediate neighbors, and even then, only if there isn't
-    # a mandatory split at that point.
+    # Fabricate a distance matrix which is:
+    #   0 on the main diagonal
+    #   'separations' on the first upper and lower diagonals
+    #   pseudo-infinite everywhere else
+    # We do this slightly odd thing because AgglomerativeClustering
+    # cannot handle disconnected adjacency matrices.
+    dmat = np.full((max_legs, max_legs), 1e308)
+    np.fill_diagonal(dmat, 0)
+    dmat[range(0, max_legs - 1), range(1, max_legs)] = separations
+    dmat[range(1, max_legs), range(0, max_legs - 1)] = separations
+
+    # We don't generate the cluster with the minimum possible
+    # number of legs, because that's "all possible merges" which
+    # choose_legs already tried.  We also don't generate the
+    # cluster with the maximum possible number of legs, because
+    # that's "every group in its own leg" which was emitted by
+    # clustered_leg_candidates.
     #
-    # (You might be wondering why we bother with clustering when the
-    # options for merger are so sparse--but, even so, the number
-    # of possibilities grows *factorially* with the number of groups.)
-    mergeable = (~np.array(mand_splits[:-1])).astype(np.uint32)
-    connectivity = diags_array([mergeable, mergeable], offsets=[1, -1])
+    # If there is more than one pair of groups that can be either
+    # merged or not merged, then max_legs is at least two more
+    # than min_legs.
+    for n_legs in range(min_legs + 1, max_legs):
+        labels = AgglomerativeClustering(
+            n_clusters = n_legs,
+            metric="precomputed",
+            linkage="single",
+        ).fit_predict(dmat)
 
-    # Save computational effort by memoizing the cluster tree across
-    # different cluster sizes; annoyingly, this requires a disk location.
-    with tempfile.TemporaryDirectory(prefix="bs-from-scst") as cache_dir:
+        leg_masks = [np.zeros(mask_shape, np.bool) for _ in range(n_legs)]
+        for grp, leg in enumerate(labels):
+            leg_masks[leg] |= grp_masks[grp]
 
-        # We don't generate the cluster with the minimum possible
-        # number of legs, because that's "all possible merges" and
-        # our caller already did that.  We also don't generate the
-        # cluster with the maximum possible number of legs, because
-        # that's "every group in its own leg" which was emitted above.
-        # (If there is more than one pair of groups that can be either
-        # merged or not merged, then max_legs is at least two more than
-        # min_legs.)
-        for n_legs in range(min_legs + 1, max_legs):
-            labels = AgglomerativeClustering(
-                n_clusters = n_legs,
-                linkage = "ward",      # best behaved with sparse connectivity
-                metric = "euclidean",  # forced by linkage="ward"
-                connectivity = connectivity,
-                memory = cache_dir,
-                compute_full_tree = False,
-            ).fit_predict(grp_centroids)
+        # Reorder the legs by index of the first True.
+        leg_masks.sort(
+            key=lambda mask: np.argwhere(mask).ravel()[0]
+        )
 
-            leg_masks = [np.zeros_like(grp_masks[0]) for _ in range(n_legs)]
-            for grp, leg in enumerate(labels):
-                leg_masks[leg] |= grp_masks[grp]
-
-            yield LegAssignment.clustered(disks, run_masks,
-                                          grp_masks, leg_masks)
+        yield LegAssignment.clustered(disks, run_masks,
+                                      grp_masks, leg_masks)
 
 
 def dump_metrics(diag_dir: Path, eclipse: int,
@@ -987,10 +1054,10 @@ def choose_legs(
 
     5. Otherwise, we take the centroid of each group of runs that
        we were required to combine by rule 1 as the representative
-       of that group, and perform constrained hierarchical clustering
+       of that group, and perform constrained spectral clustering
        to produce candidate sets with each possible number of legs.
-       The candidate set with the smallest mean uncircularity is chosen,
-       whether or not its metrics are all "acceptable".
+       The candidate set with the smallest mean uncircularity is
+       chosen, whether or not its metrics are all "acceptable".
     """
     run_masks, grp_masks, mand_splits = group_runs_by_separation(fixes)
     disks = aperture_disks(fixes.ra, fixes.dec, DETSIZE)
@@ -1046,9 +1113,93 @@ def planned_targets(scst_metadata: SCSTMetadata) -> NDArray[np.float64]:
     return np.array([planned_ra0, planned_dec0]).transpose()
 
 
+def adjust_leg_time_ranges(
+    legs: LegAssignment,
+    fixes: AspectFixes,
+) -> list[tuple[float, float]]:
+    """Calculate (start, duration) for each leg in 'legs'.
+
+    This cannot simply rely on the time stamps of the first and last
+    aspect fixes includes in the leg, because those have been trimmed
+    by the rules in `ok_aspect_fixes`, and those rules will also be
+    applied by gPhoton proper.  Note in particular this rule:
+
+    "we also distrust aspect records immediately before and after a
+    flagged aspect record; the first record in 'aspect' is assumed to
+    be preceded by a flagged record, and the last record is assumed to
+    be followed by a flagged record"
+
+    If applied repeatedly, this will chip away at the valid data for
+    each leg.  So, to ensure that gPhoton's trimming produces the same
+    set of "unflagged" aspect fixes for each leg that we used, we need
+    to expand each range a little.  But we must also make sure that
+    the ranges do not overlap.
+    """
+
+    e_times   = fixes.original_time
+    e_flagged = fixes.original_flagged
+    e_limit   = len(e_times) - 1
+
+    leg_floor = 0
+    prev_leg_end = e_times[0]
+    ranges = []
+
+    for leg in range(legs.n_legs):
+        l_mask = legs.leg_masks[leg]
+        l_times = fixes.time[l_mask]
+
+        l_start = l_times[0]
+        assert l_start >= prev_leg_end
+
+        l_end = l_times[-1]
+        if leg + 1 < legs.n_legs:
+            next_leg_start = fixes.time[legs.leg_masks[leg + 1]][0]
+        else:
+            next_leg_start = e_times[-1] + 1
+        if l_end > next_leg_start:
+            DIAG = "".join(
+                (" " if (not x and not y) else
+                "1" if (x and not y) else
+                "2" if (y and not x) else
+                "X")
+                for (x, y) in zip(l_mask, legs.leg_masks[leg+1])
+            )
+            raise AssertionError(
+                f"{leg}: {l_end=} > {next_leg_start};\n"
+                f"|{DIAG}|\n"
+            )
+
+        l_start_ix = np.argwhere(e_times >= l_start).ravel()[0]
+        l_end_ix = np.argwhere(e_times >= l_end).ravel()[0]
+
+        # If we can move the start time of the leg down by one
+        # aspect point, do so.  This will do the Right Thing in
+        # gPhoton, regardless of why the leg was split here.
+        if l_start_ix > leg_floor and e_times[l_start_ix - 1] > prev_leg_end:
+            l_start_ix -= 1
+            l_start = e_times[l_start_ix]
+
+        # If we can move the end time of the leg up by one aspect
+        # point AND this does not cause it to collide with the start
+        # time of the next leg, do so.
+        if l_end_ix < e_limit and e_times[l_end_ix + 1] < next_leg_start:
+            l_end_ix += 1
+            l_end = e_times[l_end_ix]
+
+        ranges.append((l_start - INTERVAL_FUDGE,
+                       l_end - l_start + 2*INTERVAL_FUDGE))
+
+        leg_floor = l_end_ix + 1
+        prev_leg_end = l_end
+
+    return ranges
+
+
 def boresight_for_leg(
     eclipse: int,
     leg_index: int,
+    leg_start: float,
+    leg_duration: float,
     planned_tgts: NDArray[np.float64],
     fixes: AspectFixes,
     legs: LegAssignment,
@@ -1065,6 +1216,10 @@ def boresight_for_leg(
     rgns = legs.leg_regions[leg_index]
     assert not rgns.partial.is_empty
     bbox = rgns.partial.bounds
+    ra_min  = bbox[0] + ra_offset
+    dec_min = bbox[1]
+    ra_max  = bbox[2] + ra_offset
+    dec_max = bbox[3]
 
     rgns.full_370 = shapely.intersection_all(
         aperture_disks(ra, dec, DETSIZE_370, ra_offset).disks
@@ -1074,6 +1229,13 @@ def boresight_for_leg(
     )
 
     ra0, dec0 = centroid_on_celsphere(ra, dec)
+    ra0 = wrap_into_range(ra0, ra_min, ra_max)
+    if not (dec_min <= dec0 <= dec_max):
+        raise RuntimeError(
+            f"e{eclipse}.{leg_id}: invalid centroid/bbox:"
+            f" ¬({dec_min} ≤ {dec0} ≤ {dec_max})"
+        )
+
     # Find the nearest planned target to (ra0, dec0).  If its angular
     # separation from (ra0, dec0) is less than MAX_ANGSEP_FOR_COMBINE,
     # assign this leg to that target.
@@ -1088,47 +1250,22 @@ def boresight_for_leg(
         planned_ra = None
         planned_dec = None
 
-    # If possible, expand the time range to ensure that there is one
-    # flagged aspect point on either end of the run.  This ensures
-    # that gphoton2 doesn't get confused by time ranges that consist
-    # _only_ of unflagged points.
-    time = fixes.time[leg_mask]
-    start_ix = 0
-    while fixes.original_time[start_ix] < time[0]:
-        start_ix += 1
-    while start_ix > 0 and not fixes.original_flagged[start_ix]:
-        start_ix -= 1
-
-    limit = len(fixes.original_time) - 1
-    stop_ix = limit
-    while fixes.original_time[stop_ix] > time[-1]:
-        stop_ix -= 1
-    while stop_ix < limit and not fixes.original_flagged[stop_ix]:
-        stop_ix += 1
-
-    # Aspect time points all end in .995 for some reason.  Use this to
-    # make the boresight start and end times be strictly less and
-    # greater than the time points at either end of the range.
-    start_time = fixes.original_time[start_ix] - 0.005   # nnnn.990
-    stop_time = fixes.original_time[stop_ix] + 0.005     # nnnm.000
-    duration = stop_time + 1 - start_time
-
     return (
         BoresightRecord(
             eclipse                     = eclipse,
             leg                         = leg_id,
-            time                        = start_time,
-            duration                    = duration,
+            time                        = leg_start,
+            duration                    = leg_duration,
 
             planned_ra                  = planned_ra,
             ra0                         = ra0,
-            ra_min                      = bbox[0] + ra_offset,
-            ra_max                      = bbox[2] + ra_offset,
+            ra_min                      = ra_min,
+            ra_max                      = ra_max,
 
             planned_dec                 = planned_dec,
             dec0                        = dec0,
-            dec_min                     = bbox[1],
-            dec_max                     = bbox[3],
+            dec_min                     = dec_min,
+            dec_max                     = dec_max,
 
             full_exposure_area          = metric.full_area,
             full_exposure_uncircularity = metric.uncircularity,
@@ -1144,13 +1281,35 @@ def finish_eclipse(
     fixes: AspectFixes,
     legs: LegAssignment,
 ) -> Eclipse:
+    # Due to uncertainty in setting the spacecraft's onboard clock,
+    # the eclipse start and stop times are only known to ~10s precision.
+    # Relative times within an eclipse, however, are accurate to ~0.005 s.
+    # Therefore, if the start and stop times from the SCST file are
+    # inconsistent with the start and stop times from the aspect tables,
+    # adjust the former to agree with the latter.
+    #
+    # Refs:
+    # https://www.galex.caltech.edu/researcher/faq.html#ANSWER101.2
+    # https://github.com/astropy/astropy/blob/32e73db895f36c4f9022c22471407f1ce0fbc55b/astropy/time/formats.py#L941-L944
+    aspect_t_min = fixes.time.min()
+    aspect_t_max = fixes.time.max()
+    eclipse_start = md.eclipse_start
+    eclipse_duration = md.eclipse_duration
+
+    if eclipse_start >= aspect_t_min:
+        eclipse_start = aspect_t_min - INTERVAL_FUDGE
+    if eclipse_start + eclipse_duration < aspect_t_max:
+        eclipse_duration = (aspect_t_max + INTERVAL_FUDGE) - eclipse_start
+
+    leg_times = adjust_leg_time_ranges(legs, fixes)
+
     boresight_recs = []
     la_recs = []
-
     for leg in range(legs.n_legs):
         br, la = boresight_for_leg(
             md.eclipse,
             leg,
+            *leg_times[leg],
             planned_tgts,
             fixes,
             legs,
@@ -1160,14 +1319,24 @@ def finish_eclipse(
 
 
     # compute the centroid and bounding box of the entire eclipse
-    ra0, dec0 = centroid_on_celsphere(fixes.ra, fixes.dec)
-
     if legs.n_legs == 1:
         rgns = legs.leg_regions[0]
     else:
         rgns = exposure_for_apertures(legs.disks)
     assert not rgns.partial.is_empty
     bbox = rgns.partial.bounds
+    ra_min  = bbox[0] + rgns.ra_offset
+    dec_min = bbox[1]
+    ra_max  = bbox[2] + rgns.ra_offset
+    dec_max = bbox[3]
+
+    ra0, dec0 = centroid_on_celsphere(fixes.ra, fixes.dec)
+    ra0 = wrap_into_range(ra0, ra_min, ra_max)
+    if not (dec_min <= dec0 <= dec_max):
+        raise RuntimeError(
+            f"e{md.eclipse}: invalid centroid/bbox:"
+            f" ¬({dec_min} ≤ {dec0} ≤ {dec_max})"
+        )
 
     return Eclipse(
         metadata=MetadataRecord(
@@ -1180,8 +1349,8 @@ def finish_eclipse(
             observed_legs    = legs.n_legs,
             has_aspect       = True,
 
-            eclipse_start    = md.eclipse_start,
-            eclipse_duration = md.eclipse_duration,
+            eclipse_start    = eclipse_start,
+            eclipse_duration = eclipse_duration,
             ok_exposure_time = len(fixes.time),
 
             nuv_det_on_time  = md.nuv_det_on_time,
@@ -1195,12 +1364,12 @@ def finish_eclipse(
             fuv_has_raw6     = md.fuv_has_raw6,
 
             ra0              = ra0,
-            ra_min           = bbox[0] + rgns.ra_offset,
-            ra_max           = bbox[2] + rgns.ra_offset,
+            ra_min           = ra_min,
+            ra_max           = ra_max,
 
             dec0             = dec0,
-            dec_min          = bbox[1],
-            dec_max          = bbox[3],
+            dec_min          = dec_min,
+            dec_max          = dec_max,
         ),
         boresight  = boresight_recs,
         apertures  = la_recs,
@@ -1389,6 +1558,19 @@ def plot_apertures(
     autolim_with_geoms(ax)
 
 
+def plane_projection(ra0: float, dec0: float) -> crs.Projection:
+    """Return a projection of the celestial sphere onto a plane,
+       centered at equatorial coordinates (ra0, dec0).  The projection
+       will be equal-area, and will approximately preserve circles
+       near (ra0, dec0).  Presently, a Lambert azimuthal equal area
+       projection is used."""
+    return crs.LambertAzimuthalEqualArea(
+        central_longitude=ra0,
+        central_latitude=dec0,
+        globe=CEL_SPHERE,
+    )
+
+
 def plot_diagnostic(
     diag_dir: Path,
     ec: Eclipse,
@@ -1575,7 +1757,14 @@ class ColumnSponge:
 
     def append(self, record: Any) -> None:
         for nm in self.schema.names:
-            self.columns[nm].append(getattr(record, nm))
+            val = getattr(record, nm)
+            # we should never write NaN to the tables, only arrow nulls
+            try:
+                if isnan(val):
+                    raise RuntimeError("NaN in record: " + repr(record))
+            except TypeError:
+                pass
+            self.columns[nm].append(val)
 
     def extend(self, records: Iterable[Any]) -> None:
         for rec in records:
@@ -1632,19 +1821,19 @@ class NewTableWriter:
 
         parquet.write_table(
             md, self.metadata,
-            sorting_columns=SC.from_ordering(md.schema, sort_order_md)
+            sorting_columns=SC.from_ordering(md.schema, sort_order_md),
             write_page_checksum=True,
         )
         parquet.write_table(
             bst, self.boresight,
-            sorting_columns=SC.from_ordering(bst.schema, sort_order_bst)
+            sorting_columns=SC.from_ordering(bst.schema, sort_order_bst),
             write_page_checksum=True,
         )
         # this one has really big blobs and is known not to benefit from
         # dictionary encoding
         parquet.write_table(
             la, self.leg_aper,
-            sorting_columns=SC.from_ordering(la.schema, sort_order_bst)
+            sorting_columns=SC.from_ordering(la.schema, sort_order_bst),
             use_dictionary=False,
             compression="zstd",
             write_page_checksum=True,
