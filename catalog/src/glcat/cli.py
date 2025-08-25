@@ -394,6 +394,7 @@ def process_eclipse(eclipse: int, options: CLIOptions):
             aspect_dir=options.aspect_dir,
             bands=options.bands,
             recreate=options.recreate,
+            depth=options.depth,
             verbose=options.verbose,
         )
     if options.stages & Stage.MERGED_CATALOG:
@@ -402,6 +403,7 @@ def process_eclipse(eclipse: int, options: CLIOptions):
             eclipse_dir=options.eclipse_dir,
             aspect_dir=options.aspect_dir,
             recreate=options.recreate,
+            depth=options.depth,
             verbose=options.verbose,
         )
 
