@@ -4,6 +4,7 @@ in the disks files for every good aspect point."""
 import argparse
 import gzip
 import multiprocessing
+import pickle
 import struct
 import sys
 import time
@@ -12,6 +13,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
+import shapely
 
 from pyarrow import parquet
 
@@ -68,18 +70,61 @@ def count_recorded_disks_1(fname):
     with gzip.open(fname, "rb") as fp:
         try:
             while True:
-                n = fp.read(4)
-                if len(n) == 0:
-                    break
-                if len(n) < 4:
-                    raise ValueError("truncated record (length field)")
-                n = struct.unpack("<I", n)[0]
-                lwkb = (n >> 16) & 0x3FFF
-                data = fp.read(lwkb)
-                if len(data) < lwkb:
-                    raise ValueError("truncated record (payload)")
+                eclipse, has_nuv, has_fuv, wkbs = pickle.load(fp)
                 fixes += 1
+                if not isinstance(eclipse, int):
+                    progress(
+                        f"{fname.name}/{fixes}: error: eclipse field is a {type(eclipse)!r}, not an int"
+                    )
+                    errors = True
+                if not isinstance(has_nuv, bool):
+                    progress(
+                        f"{fname.name}/{fixes}: error: has_nuv field is a {type(has_nuv)!r}, not a bool"
+                    )
+                    errors = True
+                if not isinstance(has_fuv, bool):
+                    progress(
+                        f"{fname.name}/{fixes}: error: has_fuv field is a {type(has_fuv)!r}, not a bool"
+                    )
+                    errors = True
+                if not isinstance(wkbs, list):
+                    progress(
+                        f"{fname.name}/{fixes}: error: wkbs field is a {type(wkbs)!r}, not a list"
+                    )
+                    errors = True
+                    continue
+
+                if len(wkbs) != 3:
+                    progress(
+                        f"{fname.name}/{fixes}: error: wkbs field has {len(wkbs)} items, not 3"
+                    )
+                    errors = True
+
+                for i, wkb in enumerate(wkbs):
+                    try:
+                        disk = shapely.from_wkb(wkb)
+                    except Exception as e:
+                        progress(
+                            f"{fname.name}/{fixes}: error: parsing wkbs[{i}]: {e}"
+                        )
+                        errors = True
+                        continue
+
+                    if not isinstance(disk, (shapely.Polygon,
+                                             shapely.MultiPolygon)):
+                        progress(
+                            f"{fname.name}/{fixes}: error: wkbs[{i}] is a {type(disk)!r}, not a Polygon or MultiPolygon"
+                        )
+                        errors = True
+                    elif disk.is_empty:
+                        progress(
+                            f"{fname.name}/{fixes}: error: wkbs[{i}] is empty"
+                        )
+                        errors = True
+
+        except EOFError:
             progress(f"{fname.name}: {fixes} disk sets")
+
         except Exception as e:
             progress(f"{fname.name}: error: {e} after {fixes} disk sets")
             errors = True
@@ -125,4 +170,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

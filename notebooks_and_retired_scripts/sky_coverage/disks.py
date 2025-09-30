@@ -4,27 +4,15 @@ Calculate the galactic coordinates of the edges of three disks centered on
 each point.  Write the point and its disks to a table on disk.
 
 For efficiency, each worker process writes to its own separate table on
-disk, and the table format is bespoke binary:
+disk. The table is a sequence of pickles; each pickled object is a tuple
 
-    [header]
-    [WKB GeometryCollection(Point, Polygon, Polygon, Polygon)]
-    [header]
-    [WKB GeometryCollection(Point, Polygon, Polygon, Polygon)]
-    ...
+    (eclipse, has_nuv, has_fuv, disks)
 
-where the header is this sequence of 32 *bits*, serialized as a
-little-endian unsigned int:
-
-    01234567 89abcdef 01234567 abcdef
-    NFllllll llllllll eeeeeeee eeeeee
-
-    N      = this eclipse has valid NUV image data
-    F      = this eclipse has valid FUV image data
-    lll..l = length of the subsequent GeometryCollection
-    eee..e = eclipse number
-
-(It is known that eclipse numbers fit in 16 bits and lengths fit in 14
-bits.)
+    eclipse = int:  eclipse number
+    has_nuv = bool: this eclipse has valid NUV image data
+    has_fuv = bool: this eclipse has valid FUV image data
+    disks = [wkb_350, wkb_370, wkb_400]
+    wkb_nnn = bytes: WKB representation of the disk for detector size nnn
 
 As this format is fairly verbose, the tables on disk are automatically
 compressed with gzip.
@@ -34,6 +22,8 @@ import argparse
 import gzip
 import multiprocessing
 import os
+import pickle
+import pickletools
 import struct
 import sys
 import time
@@ -158,24 +148,27 @@ def crunch_points_for_eclipse(task, ofp, aperture_disks):
     AzEq = crs.AzimuthalEquidistant
 
     for l, b in zip(points.l.hour, points.b.hour):
-        wkb = shapely.to_wkb(
-            pc.project_geometry(
-                aperture_disks,
-                AzEq(l, b, globe=globe)
-            ).buffer(0),
-            output_dimension=2,
-            byte_order=1,
-            flavor="iso"
+        projected = pc.project_geometry(
+            aperture_disks,
+            AzEq(l, b, globe=globe)
         )
-        lwkb = len(wkb)
-        assert lwkb <= 0x3FFF
+        wkbs = [
+            shapely.to_wkb(
+                disk.buffer(0),
+                output_dimension=2,
+                byte_order=1,
+                flavor="iso"
+            )
+            for disk in projected.geoms
+        ]
 
-        ofp.write(struct.pack(
-            "<I",
-            (metadata.has_nuv << 31) | (metadata.has_fuv << 30)
-            | (lwkb << 16) | (eclipse)
-        ))
-        ofp.write(wkb)
+        has_nuv = metadata.has_nuv.item()
+        has_fuv = metadata.has_fuv.item()
+
+        ofp.write(pickletools.optimize(pickle.dumps(
+            (eclipse, has_nuv, has_fuv, wkbs),
+            protocol = 4
+        )))
 
 
 def crunch_points_worker(inq, ofname):
@@ -187,7 +180,6 @@ def crunch_points_worker(inq, ofname):
     # degrees, centered on the plane origin; as a micro-optimization,
     # compute these only once per worker
     aperture_disks = shapely.GeometryCollection([
-        shapely.Point(0, 0),
         shapely.Point(0, 0).buffer(DETSIZE_350/2, quad_segs=QUAD_SEGS),
         shapely.Point(0, 0).buffer(DETSIZE_370/2, quad_segs=QUAD_SEGS),
         shapely.Point(0, 0).buffer(DETSIZE_400/2, quad_segs=QUAD_SEGS),
@@ -201,6 +193,7 @@ def crunch_points_worker(inq, ofname):
                 crunch_points_for_eclipse(task, ofp, aperture_disks)
         except EOFError:
             pass
+        ofp.flush()
 
 
 def start_worker(outdir, i):
