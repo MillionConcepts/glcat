@@ -160,6 +160,7 @@ def process_sector(sector_fname, disks, output_writer):
     THE_COUNTS = None
 
     progress("constructing batch")
+    # no need for locking at this point, we are single-threaded again
     batch = pa.RecordBatch.from_pydict({
         "gal_l":   [pt.x for pt in pointset.geometries],
         "gal_b":   [pt.y for pt in pointset.geometries],
@@ -172,7 +173,6 @@ def process_sector(sector_fname, disks, output_writer):
     }, schema=RASTER_SCHEMA)
 
     progress("writing batch")
-    # no need for locking at this point, we are single-threaded again
     output_writer.write_batch(batch)
 
     progress(f"finished with {sector_fname}")
