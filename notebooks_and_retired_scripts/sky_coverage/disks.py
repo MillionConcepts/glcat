@@ -138,16 +138,14 @@ def crunch_points_for_eclipse(task, ofp, aperture_disks):
 
     points = ok_aspect_fixes(aspect).galactic
 
-    # For each point (l, b), back-project 'aperture', from an
-    # azimuthal equidistant projection centered on (ra, dec), to the
-    # celestial sphere.  If 'ra_offset' was specified by the caller,
-    # use that, otherwise try several possibilities until we find one
-    # that doesn't split any disks.
+    # For each point (l, b), back-project each of the 'aperture_disks'
+    # from an azimuthal equidistant projection centered on (l, b), to the
+    # celestial sphere.
     globe = CEL_SPHERE
     pc = PC_GALACTIC
     AzEq = crs.AzimuthalEquidistant
 
-    for l, b in zip(points.l.hour, points.b.hour):
+    for l, b in zip(points.l.value, points.b.value):
         projected = pc.project_geometry(
             aperture_disks,
             AzEq(l, b, globe=globe)

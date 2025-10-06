@@ -100,10 +100,13 @@ def crunch_disks(worker_id, fname, pointset, counts):
     for eclipse, has_nuv, has_fuv, disks in disks_stream(fname):
         if eclipse != prev_eclipse:
             eclipses += 1
+            prev_eclipse = eclipse
+            if eclipses > 0 and eclipses % 1000 == 0:
+                progress(f"w{worker_id} [{fname.name}]: {eclipses} eclipses {hitcount} hits")
+
         if hitcount - last_flush_hitcount > 100000:
             flush_hits(hits, counts, False)
             last_flush_hitcount = hitcount
-            progress(f"w{worker_id} [{fname.name}]: {eclipses} eclipses {hitcount} hits")
 
         for disk_index, point_index in pointset.query(disks, predicate="intersects").T:
             if has_nuv:
