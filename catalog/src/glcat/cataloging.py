@@ -164,11 +164,12 @@ def make_band_catalog(
     # eclipse-wide metadata
     columns = {
         "OBSTYPE": np.full(nrows, obstype),
-        "ECLIPSE": np.full(nrows, eclipse),
-        "LEG":     np.full(nrows, leg),
+        "ECLIPSE": np.full(nrows, eclipse, dtype=np.uint16),
+        "LEG":     np.full(nrows, leg, dtype=np.uint8),
     }
+
     for i, ap in enumerate(aperture_sizes):
-        columns[f"APER_{i}"] = np.full(nrows, ap)
+        columns[f"APER_{i}"] = np.full(nrows, ap, dtype=np.float32)
 
     # sky position of sources - same for both bands
     columns["RA"] = ix_base["ra"]
@@ -290,10 +291,10 @@ def aper_photometry(
 
     # dividing artifact flags into individual flags
     artifact_flags = phot['artifact_flag'].to_numpy()
-    hotspot_flag = ((artifact_flags & 1) > 0).astype(int)
-    ghost_flag = ((artifact_flags & 2) > 0).astype(int)
-    soft_edge_flag = ((artifact_flags & 4) > 0).astype(int)
-    hard_edge_flag = ((artifact_flags & 8) > 0).astype(int)
+    hotspot_flag = ((artifact_flags & 1) > 0).astype(np.uint8)
+    ghost_flag = ((artifact_flags & 2) > 0).astype(np.uint8)
+    soft_edge_flag = ((artifact_flags & 4) > 0).astype(np.uint8)
+    hard_edge_flag = ((artifact_flags & 8) > 0).astype(np.uint8)
 
     return {
         f"{band}_SUM_A{aper_ix}": count,
